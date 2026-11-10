@@ -4,7 +4,7 @@
 // Este chequeo es solo para la interfaz; la seguridad real la dan los contratos, que vuelven a
 // verificar el rol en cada transacción.
 
-import { BrowserProvider, Contract } from "ethers";
+import { BrowserProvider, Contract, JsonRpcProvider } from "ethers";
 import { DEFAULT_CHAIN_ID, NETWORKS, ROLES, getAbi, getDeployment } from "../config/contracts.js";
 
 /**
@@ -139,7 +139,7 @@ export async function cambiarRed() {
         {
           chainId: chainIdHex,
           chainName: "Hardhat local",
-          rpcUrls: ["http://127.0.0.1:8545"],
+          rpcUrls: [NETWORKS[chainId].rpcUrl],
           nativeCurrency: { name: "ETH", symbol: "ETH", decimals: 18 },
         },
       ],
@@ -168,19 +168,43 @@ async function cargar() {
     return;
   }
 
-  if ((await provider.getCode(deployment.address)) === "0x") {
+  const signer = await provider.getSigner(base.cuenta);
+  const runner = crearRunner(chainId, signer);
+
+  if ((await runner.provider.getCode(deployment.address)) === "0x") {
     // Pasa si se reinició el nodo local y no se volvió a correr el deploy.
     actualizar({ ...base, estado: "SIN_CONTRATO" });
     return;
   }
 
-  const signer = await provider.getSigner(base.cuenta);
-  contrato = new Contract(deployment.address, await getAbi("CredencialNFT"), signer);
+  contrato = new Contract(deployment.address, await getAbi("CredencialNFT"), runner);
   deployBlock = deployment.deployBlock;
 
   for (const evento of EVENTOS_CONTRATO) contrato.on(evento, refrescarConDemora);
 
   actualizar({ ...base, estado: "CONECTADO", ...(await leerDatosDeCuenta(base.cuenta)) });
+}
+
+/**
+ * Con quién habla el contrato. Si la red tiene `rpcUrl`, las lecturas, los eventos y la estimación de gas
+ * van directo al nodo y MetaMask solo firma y envía las transacciones. Si no, todo pasa por MetaMask.
+ * @param {number} chainId
+ * @param {import("ethers").JsonRpcSigner} signer
+ * @returns {import("ethers").ContractRunner & { provider: import("ethers").Provider }}
+ */
+function crearRunner(chainId, signer) {
+  const rpcUrl = NETWORKS[chainId]?.rpcUrl;
+  if (!rpcUrl) return signer;
+
+  const nodo = new JsonRpcProvider(rpcUrl, chainId, { staticNetwork: true });
+  const conRemitente = (tx) => ({ ...tx, from: signer.address });
+  return {
+    provider: nodo,
+    call: (tx) => nodo.call(conRemitente(tx)),
+    estimateGas: (tx) => nodo.estimateGas(conRemitente(tx)),
+    resolveName: (nombre) => nodo.resolveName(nombre),
+    sendTransaction: (tx) => signer.sendTransaction(tx),
+  };
 }
 
 let temporizador = null;

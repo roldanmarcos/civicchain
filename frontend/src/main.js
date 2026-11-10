@@ -5,6 +5,7 @@ import { NETWORKS } from "./config/contracts.js";
 import { contarSolicitudesPendientes, renderAdmin } from "./ui/admin.js";
 import { ETIQUETAS_ROL, acortar, mostrarToast } from "./ui/dom.js";
 import { renderMiCredencial } from "./ui/mi-credencial.js";
+import { paginasPermitidas } from "./ui/permisos.js";
 import { cerrarRegistro, mostrarRegistro, renderRegistro } from "./ui/registro.js";
 import { explicarError } from "./web3/errores.js";
 import { alCambiarSesion, cambiarRed, conectar, iniciarSesion, obtenerSesion, rolActivo } from "./web3/sesion.js";
@@ -38,9 +39,10 @@ const alMostrar = {
 
 const pageSection = (name) => document.getElementById(`page-${name}`);
 let paginaActual = "inicio";
+let permitidas = paginasPermitidas(obtenerSesion());
 
 function goToPage(name) {
-  if (!pages[name] || !pageSection(name)) return;
+  if (!pages[name] || !pageSection(name) || !permitidas.has(name)) return;
   paginaActual = name;
   document.querySelectorAll(".page-section").forEach((section) => section.classList.remove("active"));
   pageSection(name).classList.add("active");
@@ -127,10 +129,15 @@ async function accionWallet() {
     if (sesion.estado === "SIN_METAMASK") mostrarToast("Instalá MetaMask para conectarte.");
     else if (sesion.estado === "DESCONECTADO") await conectar();
     else if (sesion.estado === "RED_INCORRECTA") await cambiarRed();
-    else if (sesion.estado === "CONECTADO") goToPage("mi-credencial");
+    else if (sesion.estado === "CONECTADO") goToPage(paginaDeLaCuenta());
   } catch (error) {
     mostrarToast(explicarError(error), 5000);
   }
+}
+
+/** Pantalla propia del usuario conectado: su credencial, el panel de administración o el registro. */
+function paginaDeLaCuenta() {
+  return ["mi-credencial", "admin", "registro"].find((pagina) => permitidas.has(pagina)) ?? "inicio";
 }
 
 /** Actualiza todo lo que depende de la sesión fuera de las pantallas. */
@@ -168,13 +175,15 @@ function actualizarInterfaz(sesion) {
   document.getElementById("profile-name").textContent = nombre;
   document.getElementById("profile-detail").textContent = detalle;
 
-  // Menú según el rol
-  document.getElementById("nav-mi-credencial").classList.toggle("hidden", !conectado);
-  document.getElementById("nav-admin").classList.toggle("hidden", !(conectado && sesion.esAdmin));
-  if (conectado && sesion.esAdmin) actualizarContadorAdmin();
+  // Menú y enlaces según el rol: el CSS oculta todo [data-page] que apunte a una pantalla no permitida
+  // (también los botones que las pantallas dibujan después, como "Ver mi credencial").
+  permitidas = paginasPermitidas(sesion);
+  document.body.dataset.paginas = [...permitidas].join(" ");
+  if (permitidas.has("admin")) actualizarContadorAdmin();
 
-  // Si estaba en una pantalla que ya no corresponde (por ejemplo, perdió el rol de admin), volver al inicio.
-  if (paginaActual === "admin" && conectado && !sesion.esAdmin) goToPage("inicio");
+  // Si estaba en una pantalla que ya no corresponde, llevarlo a donde sí. Por ejemplo: le aprobaron la
+  // solicitud estando en "Registrarse" → "Mi credencial"; perdió el rol de admin → inicio.
+  if (!permitidas.has(paginaActual)) goToPage(paginaActual === "registro" ? paginaDeLaCuenta() : "inicio");
   else alMostrar[paginaActual]?.();
 }
 

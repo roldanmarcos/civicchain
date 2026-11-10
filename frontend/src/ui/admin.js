@@ -13,6 +13,7 @@ import {
   renovar,
   revocar,
 } from "../web3/credenciales.js";
+import { explicarError } from "../web3/errores.js";
 import { obtenerSesion } from "../web3/sesion.js";
 import { bloqueConexion } from "./conexion.js";
 import {
@@ -96,7 +97,7 @@ async function renderPestana() {
     if (pestanaActual === "solicitudes") verificarPendientesEnAfip(contenedor);
     if (pestanaActual === "alta" && dniBuscado) buscarEnPadron(dniBuscado);
   } catch (error) {
-    if (id === renderId) render(contenedor, html`<div class="alerta alerta-error"><p>No se pudieron cargar los datos: ${String(error)}</p></div>`);
+    if (id === renderId) render(contenedor, html`<div class="alerta alerta-error"><p>No se pudieron cargar los datos: ${explicarError(error)}</p></div>`);
   }
 }
 
@@ -227,11 +228,16 @@ async function buscarEnPadron(dni) {
   if (campoDni) campoDni.value = dni;
   render(resultado, html`<div class="alerta"><p>Consultando el padrón…</p></div>`);
 
-  const v = await padronEmpleados.verificarAlta(dni);
+  let v, existente;
+  try {
+    v = await padronEmpleados.verificarAlta(dni);
+    existente = v.empleado?.wallet ? await credencialDeWallet(v.empleado.wallet) : null;
+  } catch (error) {
+    return render(resultado, html`<div class="alerta alerta-error"><p>No se pudo completar la búsqueda: ${explicarError(error)}</p></div>`);
+  }
   const e = v.empleado;
   if (!e) return render(resultado, html`<div class="alerta alerta-error"><p>${v.mensaje}</p></div>`);
 
-  const existente = e.wallet ? await credencialDeWallet(e.wallet) : null;
   const yaTiene = existente && !existente.revocada;
   const puedeEmitir = v.ok && !yaTiene;
 

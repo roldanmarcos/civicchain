@@ -407,3 +407,13 @@ code {
     padding: 0 13px;
   }
 }
+
+/* Navegación según el rol: main.js pone en <body data-paginas="..."> las pantallas permitidas
+   (ver ui/permisos.js) y se ocultan los menús, botones y enlaces que llevan a las demás. */
+body:not([data-paginas~="licitaciones"]) [data-page="licitaciones"],
+body:not([data-paginas~="licitaciones"]) .requiere-licitaciones,
+body:not([data-paginas~="registro"]) [data-page="registro"],
+body:not([data-paginas~="mi-credencial"]) [data-page="mi-credencial"],
+body:not([data-paginas~="admin"]) [data-page="admin"] {
+  display: none !important;
+}

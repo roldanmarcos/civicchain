@@ -5,8 +5,13 @@
 import deployments from "./deployments.json";
 import organismos from "./organismos.json";
 
+/**
+ * `rpcUrl`: si está, la dApp lee el contrato directo de ese nodo y usa MetaMask solo para firmar.
+ * En el nodo local evita que MetaMask consulte bloques de una cadena anterior después de reiniciarlo.
+ * @type {Record<number, { name: string, rpcUrl?: string }>}
+ */
 export const NETWORKS = {
-  31337: { name: "Hardhat local" },
+  31337: { name: "Hardhat local", rpcUrl: "http://127.0.0.1:8545" },
   11155111: { name: "Sepolia" },
 };
 

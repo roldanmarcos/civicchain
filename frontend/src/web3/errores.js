@@ -34,11 +34,28 @@ export function explicarError(error) {
   if (nombre && MENSAJES_CONTRATO[nombre]) return MENSAJES_CONTRATO[nombre];
   if (nombre) return `El contrato rechazó la operación (${nombre}).`;
 
+  // MetaMask numera las transacciones de cada cuenta (nonce) con su propio historial. Si se reinició el
+  // nodo local, ese historial es de la cadena anterior y el nodo rechaza la transacción.
+  if (/nonce too (high|low)|invalid nonce/i.test(textoCompleto(e))) {
+    return "MetaMask tiene guardado el historial de una cadena anterior (¿reiniciaste el nodo?) y el nodo " +
+      "rechazó la transacción. Hay que borrar la actividad de esta cuenta en MetaMask y volver a intentar.";
+  }
+
+  // Una lectura que falla sin ningún dato casi nunca es el contrato, sino la conexión con el nodo.
+  if (e?.code === "CALL_EXCEPTION" && e?.action === "call" && !e?.data) {
+    return "La red no respondió a la consulta. Recargá la página; si usás el nodo local, revisá que siga " +
+      "corriendo y que hayas corrido el deploy.";
+  }
+
   return e?.shortMessage ?? e?.message ?? "Ocurrió un error inesperado.";
 }
 
 /** Algunos nodos (como el de Hardhat) devuelven el error del contrato solo como texto. */
 function nombreDesdeMensaje(e) {
-  const texto = `${e?.message ?? ""} ${e?.info?.error?.message ?? ""} ${e?.error?.message ?? ""}`;
-  return texto.match(/custom error '(\w+)\(/)?.[1] ?? null;
+  return textoCompleto(e).match(/custom error '(\w+)\(/)?.[1] ?? null;
+}
+
+/** Junta los mensajes que ethers y MetaMask anidan en distintos lugares del error. */
+function textoCompleto(e) {
+  return `${e?.message ?? ""} ${e?.info?.error?.message ?? ""} ${e?.error?.message ?? ""} ${e?.data?.message ?? ""}`;
 }

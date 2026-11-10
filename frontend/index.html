@@ -11,7 +11,7 @@
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <script type="module" src="/src/main.js"></script>
 </head>
-<body>
+<body data-paginas="inicio licitaciones detalle registro">
   <div class="app-shell">
     <aside class="sidebar" aria-label="Navegación principal">
       <a class="brand" href="#inicio" data-page="inicio" aria-label="CivicChain, ir al inicio">
@@ -24,8 +24,8 @@
         <button class="nav-item active" data-page="inicio"><span class="nav-icon">⌂</span> Inicio</button>
         <button class="nav-item" data-page="licitaciones"><span class="nav-icon">▤</span> Licitaciones <span class="nav-count">4</span></button>
         <button class="nav-item" data-page="registro"><span class="nav-icon">＋</span> Registrarse</button>
-        <button class="nav-item hidden" data-page="mi-credencial" id="nav-mi-credencial"><span class="nav-icon">◈</span> Mi credencial</button>
-        <button class="nav-item hidden" data-page="admin" id="nav-admin"><span class="nav-icon">◇</span> Administración <span class="nav-count nav-count-alerta hidden" id="admin-count" title="Solicitudes pendientes"></span></button>
+        <button class="nav-item" data-page="mi-credencial" id="nav-mi-credencial"><span class="nav-icon">◈</span> Mi credencial</button>
+        <button class="nav-item" data-page="admin" id="nav-admin"><span class="nav-icon">◇</span> Administración <span class="nav-count nav-count-alerta hidden" id="admin-count" title="Solicitudes pendientes"></span></button>
       </nav>
       <div class="sidebar-bottom">
         <div class="privacy-card"><span class="privacy-icon">◇</span><strong>Ofertas protegidas</strong><p>Los montos permanecen cifrados hasta el cierre.</p></div>
@@ -64,8 +64,8 @@
           <article class="stat-card stat-card-highlight"><div class="stat-heading"><span>Próximo cierre</span><span class="stat-symbol">◷</span></div><strong>12 <small class="stat-unit">días</small></strong><small>Centro de salud · Quilmes</small></article>
         </div>
 
-        <div class="section-heading"><div><div class="eyebrow eyebrow-muted">SEGUIMIENTO ABIERTO</div><h2>Licitaciones destacadas</h2><p>Consultá el estado y los detalles de cada obra.</p></div><button class="button button-text" data-page="licitaciones">Ver todas <span>→</span></button></div>
-        <div class="tender-grid" id="featured-tenders"></div>
+        <div class="section-heading requiere-licitaciones"><div><div class="eyebrow eyebrow-muted">SEGUIMIENTO ABIERTO</div><h2>Licitaciones destacadas</h2><p>Consultá el estado y los detalles de cada obra.</p></div><button class="button button-text" data-page="licitaciones">Ver todas <span>→</span></button></div>
+        <div class="tender-grid requiere-licitaciones" id="featured-tenders"></div>
         <div class="how-strip"><div><span class="how-number">01</span><span><strong>Se publica</strong><small>El organismo comparte las reglas.</small></span></div><span class="how-arrow">→</span><div><span class="how-number">02</span><span><strong>Se oferta en secreto</strong><small>Los montos se revelan al cierre.</small></span></div><span class="how-arrow">→</span><div><span class="how-number">03</span><span><strong>Se audita</strong><small>El proceso queda a la vista.</small></span></div></div>
       </section>
 
