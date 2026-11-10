@@ -8,13 +8,14 @@ const VIGENCIA_POR_DEFECTO_DIAS = 90;
 const tasks = [
   emptyTask("credencial", "Administrar credenciales de CivicChain").build(),
 
-  task(["credencial", "funcionario"], "Emite una credencial de empleado o inspector (requiere ADMIN_ROLE)")
-    .addOption({ name: "wallet", description: "Wallet que recibe la credencial", defaultValue: "" })
-    .addOption({ name: "rol", description: "empleado | inspector", defaultValue: "" })
-    .addOption({ name: "organismo", description: "Id de organismo (ver frontend/src/config/organismos.json)", type: ArgumentType.INT, defaultValue: 0 })
-    .addOption({ name: "nombre", description: "Nombre y apellido (queda público)", defaultValue: "" })
+  task(["credencial", "funcionario"], "Emite la credencial de un empleado o inspector según el padrón (requiere ADMIN_ROLE)")
+    .addOption({ name: "dni", description: "DNI de la persona en el padrón de empleados", defaultValue: "" })
     .addOption({ name: "dias", description: "Días de vigencia", type: ArgumentType.INT, defaultValue: VIGENCIA_POR_DEFECTO_DIAS })
     .setAction(() => import("./tasks/funcionario.js"))
+    .build(),
+
+  task(["credencial", "auditar"], "Cruza las credenciales de funcionarios con el padrón de empleados")
+    .setAction(() => import("./tasks/auditar.js"))
     .build(),
 
   task(["credencial", "solicitudes"], "Lista las solicitudes de inscripción de proveedores")
@@ -22,9 +23,10 @@ const tasks = [
     .setAction(() => import("./tasks/solicitudes.js"))
     .build(),
 
-  task(["credencial", "aprobar"], "Aprueba una solicitud de proveedor y emite su credencial (requiere ADMIN_ROLE)")
+  task(["credencial", "aprobar"], "Verifica una solicitud en AFIP, la aprueba y emite la credencial (requiere ADMIN_ROLE)")
     .addOption({ name: "solicitud", description: "Número de solicitud", type: ArgumentType.INT, defaultValue: 0 })
     .addOption({ name: "dias", description: "Días de vigencia", type: ArgumentType.INT, defaultValue: VIGENCIA_POR_DEFECTO_DIAS })
+    .addFlag({ name: "forzar", description: "Aprobar aunque la verificación en AFIP falle" })
     .setAction(() => import("./tasks/aprobar.js"))
     .build(),
 

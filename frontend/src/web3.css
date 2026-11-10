@@ -1,0 +1,409 @@
+/* Componentes de las pantallas conectadas a la blockchain.
+   Usan las variables y el estilo de style.css (paleta verde, DM Sans / Manrope). */
+
+:root {
+  --red: #b04a3c;
+  --red-soft: #fbeeec;
+  --amber: #9b7a36;
+  --amber-soft: #f7f2e7;
+}
+
+/* Texto del botón de wallet: es <b> (y no <span>) para que en mobile quede oculto como el resto del texto */
+#wallet-button-text {
+  font-weight: inherit;
+}
+
+.button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+}
+
+code {
+  font: 11px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  background: #f3f6f3;
+  padding: 2px 5px;
+  border-radius: 4px;
+  word-break: break-all;
+}
+
+.texto-suave {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.texto-peligro {
+  color: var(--red);
+}
+
+/* Mismo estilo que el párrafo introductorio original del panel de registro */
+#registration-content > p {
+  font-size: 11px;
+  color: #88938c;
+  line-height: 1.6;
+}
+/* Que el texto de ayuda bajo un campo no desalinee el campo de al lado */
+#form-proveedor .form-field {
+  align-content: start;
+}
+
+.subtitulo {
+  font: 700 15px Manrope, sans-serif;
+  margin: 28px 0 12px;
+}
+
+/* Badge de credencial revocada / solicitud rechazada */
+.status-revoked {
+  background: var(--red-soft);
+  color: var(--red);
+}
+.status-revoked:before {
+  background: var(--red);
+}
+
+/* Alertas */
+.alerta {
+  border: 1px solid var(--line);
+  background: #fbfcfb;
+  border-radius: 9px;
+  padding: 14px 16px;
+  margin: 16px 0;
+  font-size: 11px;
+}
+.alerta strong {
+  display: block;
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+.alerta p {
+  margin: 0 0 10px;
+  color: #6d7a72;
+  line-height: 1.55;
+}
+.alerta p:last-child {
+  margin-bottom: 0;
+}
+.alerta a {
+  color: var(--green);
+}
+.alerta-ok {
+  background: var(--green-soft);
+  border-color: #d3e7d9;
+}
+.alerta-aviso {
+  background: var(--amber-soft);
+  border-color: #eadfc6;
+}
+.alerta-error {
+  background: var(--red-soft);
+  border-color: #f0d6d1;
+}
+.alerta-error strong {
+  color: var(--red);
+}
+
+/* Tarjetas */
+.panel-card {
+  background: var(--paper);
+  border: 1px solid #e7ece7;
+  border-radius: 10px;
+  padding: 18px 20px;
+  margin-bottom: 14px;
+}
+.panel-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.panel-card-head strong {
+  font: 700 14px Manrope, sans-serif;
+}
+.panel-card > p {
+  font-size: 11px;
+  color: #6d7a72;
+  line-height: 1.55;
+}
+
+.datos {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 7px 18px;
+  margin: 14px 0;
+  font-size: 11px;
+}
+.datos dt {
+  color: #9ba59e;
+}
+.datos dd {
+  margin: 0;
+  color: var(--ink);
+  min-width: 0;
+}
+
+.acciones {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+.acciones-tabla {
+  white-space: nowrap;
+  text-align: right;
+}
+
+.verificacion {
+  font-size: 11px;
+  padding: 9px 11px;
+  border-radius: 6px;
+  background: #f6f8f5;
+  color: #6d7a72;
+}
+.verificacion-ok {
+  background: var(--green-soft);
+  color: var(--green-dark);
+}
+.verificacion-error {
+  background: var(--red-soft);
+  color: var(--red);
+  margin-top: 8px;
+}
+
+/* Pestañas del panel de admin */
+.tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 20px;
+  overflow-x: auto;
+}
+.tab {
+  border: 0;
+  background: transparent;
+  padding: 10px 14px;
+  font: 600 12px "DM Sans", sans-serif;
+  color: #7c8780;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.tab:hover {
+  color: var(--green-dark);
+}
+.tab.active {
+  color: var(--green-dark);
+  border-bottom-color: var(--green);
+}
+.tab-count,
+.nav-count-alerta {
+  background: var(--amber-soft);
+  color: var(--amber);
+  border-radius: 10px;
+  padding: 1px 7px;
+  font-size: 10px;
+}
+
+/* Tablas */
+.tabla-scroll {
+  overflow-x: auto;
+  border: 1px solid #e7ece7;
+  border-radius: 10px;
+  background: var(--paper);
+}
+.tabla {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+.tabla th {
+  text-align: left;
+  font-size: 9px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: #9ba59e;
+  font-weight: 700;
+  padding: 11px 12px;
+  border-bottom: 1px solid var(--line);
+}
+.tabla td {
+  padding: 10px 12px;
+  border-bottom: 1px solid #f0f3f0;
+  vertical-align: middle;
+}
+.tabla tr:last-child td {
+  border-bottom: 0;
+}
+
+/* Formularios */
+.busqueda-dni {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  margin: 16px 0;
+  flex-wrap: wrap;
+}
+.busqueda-dni .form-field {
+  min-width: 200px;
+}
+.campo-ayuda {
+  font-size: 10px;
+  color: #9ba59e;
+}
+.campo-ok {
+  color: var(--green-dark);
+}
+.campo-error {
+  color: var(--red);
+}
+.dias {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: #5c6b61;
+}
+.dias input {
+  width: 64px;
+  height: 35px;
+  border: 1px solid #e2e8e2;
+  border-radius: 6px;
+  padding: 0 8px;
+  font: 11px "DM Sans", sans-serif;
+}
+
+/* Pasos para empleados e inspectores */
+.pasos {
+  margin: 22px 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: paso;
+  display: grid;
+  gap: 14px;
+}
+.pasos li {
+  counter-increment: paso;
+  display: grid;
+  grid-template-columns: 30px 1fr;
+  gap: 4px 12px;
+  font-size: 11px;
+}
+.pasos li:before {
+  content: counter(paso, decimal-leading-zero);
+  grid-row: span 3;
+  font: 700 12px Manrope, sans-serif;
+  color: var(--green);
+  background: var(--green-soft);
+  border-radius: 7px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+}
+.pasos li span {
+  color: #6d7a72;
+  line-height: 1.55;
+}
+.wallet-copiable {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+/* Mi credencial */
+.credencial-layout {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  gap: 14px;
+  align-items: start;
+}
+.credencial-card h2 {
+  font: 700 23px Manrope, sans-serif;
+  letter-spacing: -0.6px;
+  margin: 14px 0 0;
+}
+.herramientas {
+  list-style: none;
+  padding: 0;
+  margin: 12px 0 0;
+  display: grid;
+  gap: 12px;
+}
+.herramientas li {
+  display: grid;
+  gap: 4px;
+  font-size: 11px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #f0f3f0;
+}
+.herramientas li:last-child {
+  border-bottom: 0;
+}
+.herramientas li span:not(.card-status) {
+  color: #6d7a72;
+  line-height: 1.55;
+}
+.herramientas .card-status {
+  justify-self: start;
+}
+
+/* Diálogo para motivos */
+.dialogo {
+  border: 0;
+  border-radius: 12px;
+  padding: 22px;
+  width: min(420px, calc(100vw - 32px));
+  box-shadow: 0 20px 50px #17251f40;
+  font-family: "DM Sans", sans-serif;
+  color: var(--ink);
+}
+.dialogo::backdrop {
+  background: #17251f55;
+}
+.dialogo h3 {
+  font: 700 17px Manrope, sans-serif;
+  margin: 0 0 6px;
+}
+.dialogo p {
+  font-size: 11px;
+  color: #6d7a72;
+  margin: 0 0 14px;
+  line-height: 1.55;
+}
+.dialogo-acciones {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+@media (max-width: 760px) {
+  .credencial-layout {
+    grid-template-columns: 1fr;
+  }
+  .datos {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+  .datos dd {
+    margin-bottom: 8px;
+  }
+}
+
+/* En pantallas chicas style.css oculta el texto de .button-small (deja solo el ícono).
+   En los botones de las pantallas nuevas el texto es necesario. */
+@media (max-width: 500px) {
+  .registration-panel .button-small,
+  .page-section .panel-card .button-small,
+  .page-section .alerta .button-small,
+  .page-section .busqueda-dni .button-small,
+  .dialogo .button-small,
+  .tabla .button-small {
+    font-size: 11px;
+    width: auto;
+    padding: 0 13px;
+  }
+}

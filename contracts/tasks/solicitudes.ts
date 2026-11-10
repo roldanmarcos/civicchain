@@ -1,5 +1,6 @@
 import {
   ESTADOS_SOLICITUD,
+  clienteAfip,
   comoTask,
   conectarCredenciales,
   formatearCuit,
@@ -13,6 +14,7 @@ interface Args {
 /** Lista las solicitudes de inscripción de proveedores (por defecto, solo las pendientes). */
 export default comoTask<Args>(async (args, hre) => {
   const { credenciales } = await conectarCredenciales(hre);
+  const afip = await clienteAfip();
 
   const total = Number(await credenciales.totalSolicitudes());
   // Domicilio y rubros solo están en los eventos
@@ -36,6 +38,10 @@ export default comoTask<Args>(async (args, hre) => {
     }
     console.log(`  Wallet:       ${s.wallet}`);
     console.log(`  Fecha:        ${formatearFecha(s.creadaEn)}`);
+    if (estado === "PENDIENTE") {
+      const v = await afip.verificarSolicitud({ cuit: s.cuit.toString(), razonSocial: s.razonSocial });
+      console.log(`  AFIP:         ${v.ok ? "✓" : "✗"} ${v.mensaje}`);
+    }
   }
 
   if (mostradas === 0) console.log(args.todas ? "No hay solicitudes." : "No hay solicitudes pendientes.");

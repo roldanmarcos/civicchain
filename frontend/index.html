@@ -18,23 +18,25 @@
         <span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></span>
         <span>Civic<span class="brand-light">Chain</span></span>
       </a>
-      <div class="network-pill"><span class="status-dot"></span> Vista de demostración</div>
+      <div class="network-pill"><span class="status-dot"></span> <span id="network-label">Sin wallet conectada</span></div>
       <p class="nav-label">PLATAFORMA</p>
       <nav class="main-nav">
         <button class="nav-item active" data-page="inicio"><span class="nav-icon">⌂</span> Inicio</button>
         <button class="nav-item" data-page="licitaciones"><span class="nav-icon">▤</span> Licitaciones <span class="nav-count">4</span></button>
         <button class="nav-item" data-page="registro"><span class="nav-icon">＋</span> Registrarse</button>
+        <button class="nav-item hidden" data-page="mi-credencial" id="nav-mi-credencial"><span class="nav-icon">◈</span> Mi credencial</button>
+        <button class="nav-item hidden" data-page="admin" id="nav-admin"><span class="nav-icon">◇</span> Administración <span class="nav-count nav-count-alerta hidden" id="admin-count" title="Solicitudes pendientes"></span></button>
       </nav>
       <div class="sidebar-bottom">
         <div class="privacy-card"><span class="privacy-icon">◇</span><strong>Ofertas protegidas</strong><p>Los montos permanecen cifrados hasta el cierre.</p></div>
-        <button class="profile-button" data-page="registro"><span class="avatar">?</span><span><strong>Invitado</strong><small>Conectar para participar</small></span><span class="profile-arrow">↗</span></button>
+        <button class="profile-button" id="profile-button"><span class="avatar" id="profile-avatar">?</span><span><strong id="profile-name">Invitado</strong><small id="profile-detail">Conectar para participar</small></span><span class="profile-arrow">↗</span></button>
       </div>
     </aside>
 
     <main class="main-content">
       <header class="topbar">
         <div class="breadcrumb"><span>Espacio público</span><span class="crumb-separator">/</span><strong id="current-section">Inicio</strong></div>
-        <div class="top-actions"><span class="demo-label"><span class="status-dot"></span> Datos de ejemplo</span><button class="button button-outline button-small" data-page="registro"><span>◈</span> Conectar wallet</button><button class="mobile-menu" id="mobile-menu" aria-label="Abrir menú">☰</button></div>
+        <div class="top-actions"><span class="demo-label"><span class="status-dot"></span> Datos de ejemplo</span><button class="button button-outline button-small" id="wallet-button"><span>◈</span> <b id="wallet-button-text">Conectar wallet</b></button><button class="mobile-menu" id="mobile-menu" aria-label="Abrir menú">☰</button></div>
       </header>
 
       <section class="page-section active" id="page-inicio" aria-labelledby="hero-title">
@@ -75,13 +77,13 @@
       </section>
 
       <section class="page-section" id="page-registro" aria-labelledby="register-title">
-        <div class="page-intro"><div class="eyebrow"><span class="eyebrow-line"></span> UN ESPACIO, DISTINTOS ROLES</div><h1 id="register-title">¿Cómo querés participar?</h1><p>Elegí un perfil para ver los pasos de registro. Esta demostración no envía ni guarda tus datos.</p></div>
+        <div class="page-intro"><div class="eyebrow"><span class="eyebrow-line"></span> UN ESPACIO, DISTINTOS ROLES</div><h1 id="register-title">¿Cómo querés participar?</h1><p>Elegí un perfil. Tu wallet es tu identidad: al conectarla con MetaMask, CivicChain reconoce tu credencial.</p></div>
         <div class="role-grid">
           <button class="role-card" data-role="proveedor"><span class="role-icon role-green">↗</span><span class="role-tag">SECTOR PRIVADO</span><strong>Proveedor</strong><p>Presentá ofertas anónimas en licitaciones abiertas.</p><span class="role-link">Ver registro <b>→</b></span></button>
           <button class="role-card" data-role="empleado"><span class="role-icon role-blue">▤</span><span class="role-tag">ORGANISMO PÚBLICO</span><strong>Empleado estatal</strong><p>Publicá licitaciones y gestioná sus etapas.</p><span class="role-link">Ver registro <b>→</b></span></button>
           <button class="role-card" data-role="inspector"><span class="role-icon role-orange">◎</span><span class="role-tag">CONTROL DE OBRA</span><strong>Inspector</strong><p>Registrá evaluaciones y avances de obra.</p><span class="role-link">Ver registro <b>→</b></span></button>
         </div>
-        <div class="registration-panel hidden" id="registration-panel"><div class="registration-head"><button class="back-link" id="back-to-roles">← Volver a perfiles</button><span class="role-tag" id="registration-tag"></span></div><h2 id="registration-heading"></h2><p id="registration-description"></p><form id="registration-form"><div class="form-grid" id="registration-fields"></div><div class="form-note"><span>ⓘ</span><span>Maqueta visual: el registro real y la validación de identidad todavía no están conectados.</span></div><button class="button button-primary" type="submit">Ver resumen de registro <span>→</span></button></form></div>
+        <div class="registration-panel hidden" id="registration-panel"><div class="registration-head"><button class="back-link" id="back-to-roles">← Volver a perfiles</button><span class="role-tag" id="registration-tag"></span></div><div id="registration-content"></div></div>
         <div class="notice-card"><span class="notice-symbol">◇</span><div><strong>Privacidad desde el diseño</strong><p>La identidad del proveedor se mantiene separada de su oferta durante la evaluación.</p></div><button class="button button-text" data-page="licitaciones">Conocer el proceso <span>→</span></button></div>
       </section>
 
@@ -89,7 +91,17 @@
         <button class="back-link detail-back" data-page="licitaciones">← Volver a licitaciones</button>
         <div class="detail-layout"><div class="detail-main"><div class="detail-status" id="detail-status"></div><div class="eyebrow eyebrow-muted" id="detail-agency"></div><h1 id="detail-title"></h1><p class="detail-location" id="detail-location"></p><div class="detail-progress"><div class="progress-heading"><strong>Estado del proceso</strong><span id="detail-progress-label"></span></div><div class="progress-track"><span id="detail-progress-bar"></span></div><div class="phase-list" id="detail-phases"></div></div><div class="detail-description"><h2>Sobre esta obra</h2><p id="detail-description"></p></div><div class="detail-document"><span class="document-icon">▤</span><span><strong>Pliego de condiciones</strong><small>Documento de ejemplo · disponible al publicar</small></span><span class="document-arrow">↗</span></div></div><aside class="detail-aside"><div class="aside-card"><span class="aside-label">PRESUPUESTO OFICIAL</span><strong id="detail-budget"></strong><div class="aside-divider"></div><span class="aside-label">CIERRE DE OFERTAS</span><strong class="aside-date" id="detail-deadline"></strong><div class="aside-divider"></div><div class="sealed-info"><span>⌑</span><p><strong>Ofertas selladas</strong><br>Los montos se revelan al finalizar el plazo.</p></div><button class="button button-primary button-full" data-page="registro">Participar en esta licitación <span>→</span></button><small class="demo-footnote">Acción simulada · sin conexión a wallet</small></div><div class="aside-card audit-card"><span class="mini-icon green-icon">✓</span><strong>Proceso auditable</strong><p>Las etapas y decisiones se registran para consulta pública.</p><a href="#licitaciones" data-page="licitaciones">Ver otras licitaciones →</a></div></aside></div>
       </section>
-      <footer class="footer"><span>© 2026 CivicChain</span><span>Prototipo visual · Sin conexión a blockchain</span><a href="#inicio" data-page="inicio">Volver arriba ↑</a></footer>
+      <section class="page-section" id="page-mi-credencial" aria-labelledby="mi-credencial-title">
+        <div class="page-intro"><div class="eyebrow"><span class="eyebrow-line"></span> TU IDENTIDAD EN CIVICCHAIN</div><h1 id="mi-credencial-title">Mi credencial</h1><p>Tu credencial es un NFT intransferible en tu wallet. Nunca sale de ella: CivicChain solo la lee para saber qué podés hacer.</p></div>
+        <div id="mi-credencial-content"></div>
+      </section>
+
+      <section class="page-section" id="page-admin" aria-labelledby="admin-title">
+        <div class="page-intro"><div class="eyebrow"><span class="eyebrow-line"></span> ADMINISTRACIÓN</div><h1 id="admin-title">Credenciales</h1><p>Habilitá proveedores verificados en AFIP, emití credenciales a funcionarios del padrón y revocá las que ya no correspondan. Cada acción queda registrada en la blockchain.</p></div>
+        <div id="admin-content"></div>
+      </section>
+
+      <footer class="footer"><span>© 2026 CivicChain</span><span>Licitaciones de ejemplo · Credenciales en blockchain</span><a href="#inicio" data-page="inicio">Volver arriba ↑</a></footer>
     </main>
   </div>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>

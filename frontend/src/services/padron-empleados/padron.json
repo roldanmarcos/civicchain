@@ -1,0 +1,90 @@
+[
+  {
+    "dni": "30111222",
+    "nombre": "Ana Pérez",
+    "funcion": "EMPLEADO",
+    "organismoId": 1,
+    "area": "Secretaría de Obras Públicas",
+    "cargo": "Directora de Compras y Contrataciones",
+    "resolucion": "Res. 1234/2026",
+    "estado": "ACTIVO",
+    "wallet": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8"
+  },
+  {
+    "dni": "28999000",
+    "nombre": "Luis Gómez",
+    "funcion": "INSPECTOR",
+    "organismoId": 2,
+    "area": "Dirección de Obras Viales",
+    "cargo": "Inspector de obra",
+    "resolucion": "Res. 0871/2025",
+    "estado": "ACTIVO",
+    "wallet": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC"
+  },
+  {
+    "dni": "33444555",
+    "nombre": "Carlos Díaz",
+    "funcion": "EMPLEADO",
+    "organismoId": 3,
+    "area": "Secretaría de Servicios Públicos",
+    "cargo": "Jefe de Licitaciones",
+    "resolucion": "Res. 0455/2026",
+    "estado": "ACTIVO",
+    "wallet": "0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65"
+  },
+  {
+    "dni": "27666777",
+    "nombre": "Marta Ruiz",
+    "funcion": "EMPLEADO",
+    "organismoId": 1,
+    "area": "Secretaría de Obras Públicas",
+    "cargo": "Analista de Compras",
+    "resolucion": "Res. 0990/2024",
+    "estado": "BAJA",
+    "wallet": "0x9965507D1a55bcC2695C58ba16FB37d819B0A4dc"
+  },
+  {
+    "dni": "25888999",
+    "nombre": "Jorge Medina",
+    "funcion": "EMPLEADO",
+    "organismoId": 2,
+    "area": "Secretaría de Planeamiento",
+    "cargo": "Coordinador de Proyectos",
+    "resolucion": "Res. 0312/2025",
+    "estado": "BAJA",
+    "wallet": "0xa0Ee7A142d267C1f36714E4a8F75612F20a79720"
+  },
+  {
+    "dni": "35222333",
+    "nombre": "Sofía Torres",
+    "funcion": "INSPECTOR",
+    "organismoId": 4,
+    "area": "Infraestructura Escolar",
+    "cargo": "Inspectora de obra",
+    "resolucion": "Res. 0077/2026",
+    "estado": "ACTIVO",
+    "wallet": "0xBcd4042DE499D14e55001CcbB24a551F3b954096"
+  },
+  {
+    "dni": "31555666",
+    "nombre": "Pablo Ríos",
+    "funcion": "EMPLEADO",
+    "organismoId": 1,
+    "area": "Secretaría de Hacienda",
+    "cargo": "Analista de Presupuesto",
+    "resolucion": "Res. 1501/2025",
+    "estado": "ACTIVO",
+    "wallet": "0xFABB0ac9d68B0B445fB7357272Ff202C5651694a"
+  },
+  {
+    "dni": "36777888",
+    "nombre": "Diego Sosa",
+    "funcion": "INSPECTOR",
+    "organismoId": 3,
+    "area": "Dirección de Alumbrado",
+    "cargo": "Inspector de obra",
+    "resolucion": "Res. 0620/2026",
+    "estado": "ACTIVO",
+    "wallet": null
+  }
+]

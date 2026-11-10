@@ -1,5 +1,7 @@
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import type { HardhatRuntimeEnvironment } from "hardhat/types/hre";
+import { crearClienteAfip, cuitValido } from "../../../frontend/src/services/afip/afip.js";
+import { crearClientePadron } from "../../../frontend/src/services/padron-empleados/padron.js";
 
 // ---------------------------------------------------------------------------
 // Constantes compartidas con el frontend
@@ -13,30 +15,9 @@ export const CHAIN_ID_LOCAL = 31337;
 export const ROLES = ["PROVEEDOR", "EMPLEADO", "INSPECTOR"] as const;
 export const ESTADOS_SOLICITUD = ["PENDIENTE", "APROBADA", "RECHAZADA", "CANCELADA"] as const;
 
-/** Rol de empleado o inspector (los proveedores se inscriben por solicitud). */
-export function parseRolFuncionario(texto: string): number {
-  const rol = texto.toUpperCase();
-  if (rol !== "EMPLEADO" && rol !== "INSPECTOR") {
-    throw new Error(
-      `Rol inválido "${texto}". Opciones: empleado, inspector (los proveedores se inscriben con una solicitud).`,
-    );
-  }
-  return ROLES.indexOf(rol);
-}
-
 // ---------------------------------------------------------------------------
 // CUIT
 // ---------------------------------------------------------------------------
-
-/** Misma validación que `cuitValido` del contrato: 11 dígitos y dígito verificador. */
-export function cuitValido(cuit: string): boolean {
-  if (!/^\d{11}$/.test(cuit)) return false;
-  const pesos = [5, 4, 3, 2, 7, 6, 5, 4, 3, 2];
-  const suma = pesos.reduce((total, peso, i) => total + peso * Number(cuit[i]), 0);
-  let esperado = 11 - (suma % 11);
-  if (esperado === 11) esperado = 0;
-  return esperado !== 10 && esperado === Number(cuit[10]);
-}
 
 /** "30-71234567-1" → 30712345671n. Valida el dígito verificador. */
 export function parseCuit(texto: string): bigint {
@@ -93,6 +74,52 @@ export async function leerDeployment(chainId: number, contrato: string): Promise
     );
   }
   return datos;
+}
+
+/** Cliente de la AFIP simulada (el mismo módulo que usa la dApp), con el padrón leído del disco. */
+export async function clienteAfip() {
+  const padron = JSON.parse(await readFile(new URL("../../../frontend/src/services/afip/padron.json", import.meta.url), "utf8"));
+  return crearClienteAfip(padron);
+}
+
+/** Cliente del padrón de empleados simulado (el mismo módulo que usa la dApp). */
+export async function clientePadron() {
+  const registros = JSON.parse(
+    await readFile(new URL("../../../frontend/src/services/padron-empleados/padron.json", import.meta.url), "utf8"),
+  );
+  return crearClientePadron(registros);
+}
+
+interface ContratoCredenciales {
+  totalEmitidas(): Promise<bigint>;
+  ownerOf(tokenId: bigint): Promise<string>;
+  credencial(tokenId: bigint): Promise<{
+    rol: bigint;
+    organismoId: bigint;
+    validaHasta: bigint;
+    revocada: boolean;
+    nombre: string;
+  }>;
+}
+
+/** Lee todas las credenciales emitidas, en el formato que espera `auditar` del padrón. */
+export async function leerTodasLasCredenciales(credenciales: ContratoCredenciales, ethers: ConProvider) {
+  const ahora = BigInt((await ethers.provider.getBlock("latest"))!.timestamp);
+  const total = await credenciales.totalEmitidas();
+  const resultado = [];
+  for (let tokenId = 1n; tokenId <= total; tokenId++) {
+    const [c, wallet] = await Promise.all([credenciales.credencial(tokenId), credenciales.ownerOf(tokenId)]);
+    resultado.push({
+      tokenId,
+      wallet,
+      rol: ROLES[Number(c.rol)],
+      organismoId: Number(c.organismoId),
+      nombre: c.nombre,
+      revocada: c.revocada,
+      vencida: ahora > c.validaHasta,
+    });
+  }
+  return resultado;
 }
 
 export async function leerOrganismos(): Promise<{ id: number; nombre: string }[]> {

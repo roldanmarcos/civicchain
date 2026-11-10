@@ -12,6 +12,7 @@ import {
   CHAIN_ID_LOCAL,
   ROLES,
   VIGENCIA_POR_DEFECTO_DIAS,
+  clientePadron,
   conectarCredenciales,
   explicarError,
   venceEnDias,
@@ -44,26 +45,35 @@ for (const [nombre, address] of Object.entries(ADMINS_EQUIPO)) {
   );
 }
 
-// 2. Empleados e inspectores, emitidos directamente por el admin.
+// 2. Empleados e inspectores, con los datos del padrón simulado.
+//    Algunos casos simulan historia: credenciales emitidas antes de una baja o de un cambio de wallet,
+//    para que `credencial auditar` y el panel de admin tengan algo que detectar.
+const padron = await clientePadron();
 const funcionarios = [
-  { cuenta: 1, rol: "EMPLEADO", organismo: 1, nombre: "Ana Pérez", vence, detalle: "empleada de Quilmes" },
-  { cuenta: 2, rol: "INSPECTOR", organismo: 2, nombre: "Luis Gómez", vence, detalle: "inspector de Berazategui" },
-  { cuenta: 4, rol: "EMPLEADO", organismo: 3, nombre: "Carlos Díaz", vence: venceEnCincoMinutos, detalle: "empleado de Avellaneda, vence en 5 minutos" },
-  { cuenta: 5, rol: "EMPLEADO", organismo: 1, nombre: "Marta Ruiz", vence, detalle: "empleada de Quilmes, se revoca" },
+  { dni: "30111222", cuenta: 1, vence, detalle: "empleada de Quilmes" },
+  { dni: "28999000", cuenta: 2, vence, detalle: "inspector de Berazategui" },
+  { dni: "33444555", cuenta: 4, vence: venceEnCincoMinutos, detalle: "empleado de Avellaneda, vence en 5 minutos" },
+  { dni: "27666777", cuenta: 5, vence, detalle: "de baja en el padrón, se revoca" },
+  { dni: "25888999", cuenta: 9, vence, detalle: "de baja en el padrón, pero la credencial sigue sin revocar" },
+  { dni: "31555666", cuenta: 11, vence, detalle: "credencial en su wallet anterior (en el padrón declaró la #12)" },
 ];
 
 console.log("\nEmpleados e inspectores:");
 for (const f of funcionarios) {
+  const empleado = (await padron.consultarDni(f.dni))!;
   const wallet = cuentas[f.cuenta].address;
-  await paso(`Cuenta #${f.cuenta} ${wallet}  ${f.nombre}, ${f.detalle}`, async () =>
-    (await credenciales.emitirFuncionario(wallet, ROLES.indexOf(f.rol as never), f.organismo, f.nombre, f.vence)).wait(),
+  await paso(`Cuenta #${f.cuenta} ${wallet}  ${empleado.nombre}, ${f.detalle}`, async () =>
+    (
+      await credenciales.emitirFuncionario(wallet, ROLES.indexOf(empleado.funcion), empleado.organismoId, empleado.nombre, f.vence)
+    ).wait(),
   );
 }
 
 const [tokenRevocado] = await credenciales.credencialDe(cuentas[5].address);
 await paso(`Credencial #${tokenRevocado} de la cuenta #5 revocada`, async () =>
-  (await credenciales.revocar(tokenRevocado, "Baja en el padrón de empleados (ejemplo)")).wait(),
+  (await credenciales.revocar(tokenRevocado, "Baja en el padrón de empleados")).wait(),
 );
+console.log("  Cuenta #10 Sofía Torres: activa en el padrón, todavía sin credencial (para emitir en la demo)");
 
 // 3. Proveedores: se inscriben desde su propia wallet y el admin aprueba.
 //    Los CUITs coinciden con el padrón de la AFIP simulada (Fase 3).
@@ -78,12 +88,17 @@ await paso(`Cuenta #3 ${cuentas[3].address}  Construcciones del Sur S.A., solici
   await (await credenciales.aprobarSolicitud(id, vence)).wait();
 });
 
-await paso(`Cuenta #6 ${cuentas[6].address}  Obras del Norte S.R.L., solicitud pendiente`, async () =>
-  (
-    await credenciales
-      .connect(cuentas[6])
-      .solicitarInscripcion(30709876542n, "Obras del Norte S.R.L.", "Calle 14 N° 456, Berazategui", "Electricidad, iluminación")
-  ).wait(),
-);
+// Solicitudes pendientes, una por cada resultado posible de la verificación en AFIP.
+const pendientes = [
+  { cuenta: 6, cuit: 30709876542n, razonSocial: "Obras del Norte S.R.L.", domicilio: "Calle 14 N° 456, Berazategui", rubros: "Electricidad, iluminación", afip: "AFIP OK" },
+  { cuenta: 7, cuit: 30719998883n, razonSocial: "Electro Sur S.R.L.", domicilio: "San Martín 789, Lanús", rubros: "Electricidad", afip: "la razón social no coincide con AFIP" },
+  { cuenta: 8, cuit: 30705554443n, razonSocial: "Viales Bonaerenses S.A.", domicilio: "Ruta 2 km 40, Florencio Varela", rubros: "Obras viales", afip: "CUIT inactivo en AFIP" },
+];
 
-console.log('\nCuentas sin credencial para probar el caso "sin acceso": #7 en adelante.');
+for (const p of pendientes) {
+  await paso(`Cuenta #${p.cuenta} ${cuentas[p.cuenta].address}  ${p.razonSocial}, solicitud pendiente (${p.afip})`, async () =>
+    (await credenciales.connect(cuentas[p.cuenta]).solicitarInscripcion(p.cuit, p.razonSocial, p.domicilio, p.rubros)).wait(),
+  );
+}
+
+console.log('\nCuentas sin credencial ni solicitud, para probar el caso "sin acceso": #13 en adelante.');

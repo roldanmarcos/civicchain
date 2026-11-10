@@ -1,8 +1,16 @@
-import { comoTask, conectarCredenciales, formatearCuit, formatearFecha, venceEnDias } from "../scripts/lib/credenciales.js";
+import {
+  clienteAfip,
+  comoTask,
+  conectarCredenciales,
+  formatearCuit,
+  formatearFecha,
+  venceEnDias,
+} from "../scripts/lib/credenciales.js";
 
 interface Args {
   solicitud: number;
   dias: number;
+  forzar: boolean;
 }
 
 export default comoTask<Args>(async (args, hre) => {
@@ -10,11 +18,20 @@ export default comoTask<Args>(async (args, hre) => {
   if (args.solicitud <= 0) throw new Error("Falta --solicitud (el número de solicitud)");
 
   const s = await credenciales.solicitud(args.solicitud);
+  console.log(`Solicitud #${args.solicitud}: ${s.razonSocial} (CUIT ${formatearCuit(s.cuit)})`);
+
+  const afip = await clienteAfip();
+  const verificacion = await afip.verificarSolicitud({ cuit: s.cuit.toString(), razonSocial: s.razonSocial });
+  console.log(`  AFIP: ${verificacion.ok ? "✓" : "✗"} ${verificacion.mensaje}`);
+
+  if (!verificacion.ok && !args.forzar) {
+    throw new Error(
+      "No se aprueba porque la verificación en AFIP falló. Rechazala con `credencial rechazar`, " +
+        "o usá --forzar si revisaste el caso a mano.",
+    );
+  }
+
   const validaHasta = await venceEnDias(ethers, args.dias);
-
-  // TODO (Fase 3): consultar el CUIT en la AFIP simulada antes de aprobar.
-  console.log(`Aprobando solicitud #${args.solicitud}: ${s.razonSocial} (CUIT ${formatearCuit(s.cuit)})`);
-
   const tx = await credenciales.aprobarSolicitud(args.solicitud, validaHasta);
   await tx.wait();
   const [tokenId] = await credenciales.credencialDe(s.wallet);
