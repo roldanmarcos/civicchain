@@ -1,0 +1,60 @@
+[
+  {
+    "idPersona": 30712345671,
+    "tipoPersona": "JURIDICA",
+    "estadoClave": "ACTIVO",
+    "razonSocial": "CONSTRUCCIONES DEL SUR S.A.",
+    "domicilioFiscal": { "direccion": "AV. CALCHAQUI 1234", "localidad": "QUILMES", "descripcionProvincia": "BUENOS AIRES" },
+    "actividades": ["Construcción de obras de ingeniería civil", "Construcción de obras viales"]
+  },
+  {
+    "idPersona": 30709876542,
+    "tipoPersona": "JURIDICA",
+    "estadoClave": "ACTIVO",
+    "razonSocial": "OBRAS DEL NORTE S.R.L.",
+    "domicilioFiscal": { "direccion": "CALLE 14 456", "localidad": "BERAZATEGUI", "descripcionProvincia": "BUENOS AIRES" },
+    "actividades": ["Instalaciones eléctricas", "Alumbrado público"]
+  },
+  {
+    "idPersona": 30711112223,
+    "tipoPersona": "JURIDICA",
+    "estadoClave": "ACTIVO",
+    "razonSocial": "PINTURAS RIBERA S.A.",
+    "domicilioFiscal": { "direccion": "MITRE 100", "localidad": "AVELLANEDA", "descripcionProvincia": "BUENOS AIRES" },
+    "actividades": ["Pintura y trabajos de decoración"]
+  },
+  {
+    "idPersona": 30719998883,
+    "tipoPersona": "JURIDICA",
+    "estadoClave": "ACTIVO",
+    "razonSocial": "ELECTRO CONURBANO S.R.L.",
+    "domicilioFiscal": { "direccion": "SAN MARTIN 789", "localidad": "LANUS", "descripcionProvincia": "BUENOS AIRES" },
+    "actividades": ["Instalaciones eléctricas"]
+  },
+  {
+    "idPersona": 30705554443,
+    "tipoPersona": "JURIDICA",
+    "estadoClave": "INACTIVO",
+    "razonSocial": "VIALES BONAERENSES S.A.",
+    "domicilioFiscal": { "direccion": "RUTA 2 KM 40", "localidad": "FLORENCIO VARELA", "descripcionProvincia": "BUENOS AIRES" },
+    "actividades": ["Construcción de obras viales"]
+  },
+  {
+    "idPersona": 20301112220,
+    "tipoPersona": "FISICA",
+    "estadoClave": "ACTIVO",
+    "apellido": "GARCIA",
+    "nombre": "JUAN CARLOS",
+    "domicilioFiscal": { "direccion": "BELGRANO 55", "localidad": "BERNAL", "descripcionProvincia": "BUENOS AIRES" },
+    "actividades": ["Trabajos de albañilería"]
+  },
+  {
+    "idPersona": 27256667776,
+    "tipoPersona": "FISICA",
+    "estadoClave": "ACTIVO",
+    "apellido": "FERNANDEZ",
+    "nombre": "LAURA",
+    "domicilioFiscal": { "direccion": "RIVADAVIA 3200", "localidad": "AVELLANEDA", "descripcionProvincia": "BUENOS AIRES" },
+    "actividades": ["Servicios de arquitectura"]
+  }
+]
