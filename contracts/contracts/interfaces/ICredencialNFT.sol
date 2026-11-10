@@ -16,7 +16,8 @@ interface ICredencialNFT {
         uint64 emitidaEn;
         uint64 validaHasta;
         bool revocada;
-        bytes32 idHash; // hash(DNI o CUIT + sal), calculado fuera de la cadena
+        uint64 cuit; // solo proveedores; 0 para empleados e inspectores
+        string nombre; // nombre y apellido (empleado/inspector) o razón social (proveedor)
     }
 
     /// @notice true si `wallet` tiene una credencial de `rol` que no está revocada ni vencida.
