@@ -1,0 +1,21 @@
+# Dependencias
+node_modules/
+
+# Hardhat
+contracts/artifacts/
+contracts/cache/
+contracts/types/
+contracts/typechain-types/
+contracts/coverage/
+contracts/ignition/deployments/chain-31337/
+
+# Vite
+frontend/dist/
+
+# Variables de entorno y secretos
+.env
+.env.*
+
+# Sistema / editor
+.DS_Store
+Thumbs.db

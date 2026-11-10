@@ -1,3 +1,5 @@
+import "./style.css";
+
 const tenders = [
   { id: "CC-2026-014", title: "Ampliación del Centro de Salud San Martín", agency: "Municipalidad de Quilmes", location: "Quilmes, Buenos Aires", budget: "$ 48.500.000", status: "Recibiendo ofertas", deadline: "24 de noviembre de 2026", progress: 34, description: "Ampliación de consultorios y renovación de las instalaciones eléctricas y sanitarias del Centro de Salud San Martín. El proyecto contempla nuevas áreas de atención y accesibilidad para pacientes.", theme: "green", phase: 1, closeIn: "12 días" },
   { id: "CC-2026-012", title: "Pavimentación de calles — Barrio Los Aromos", agency: "Municipalidad de Berazategui", location: "Berazategui, Buenos Aires", budget: "$ 76.200.000", status: "En evaluación", deadline: "Cierre: 6 de noviembre de 2026", progress: 56, description: "Pavimentación y obras pluviales en calles del Barrio Los Aromos. Se incluyen tareas de preparación del terreno, desagües y construcción de calzada.", theme: "blue", phase: 2, closeIn: "Evaluación" },
