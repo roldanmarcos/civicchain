@@ -102,13 +102,18 @@ export function crearServicioInscripciones({ db, afip, cadena, protocolo, config
       const sal = protocolo.nuevaSal();
       const datosHash = protocolo.datosHash(completos, sal);
 
+      // Se usa la hora más adelantada entre el servidor y el último bloque: si el reloj de la cadena va
+      // adelantado (por ejemplo, en la red local después de avanzar el tiempo), la firma no nace vencida.
+      const { provider } = await cadena.conectar();
+      const bloque = provider ? await provider.getBlock("latest") : null;
+      const t = Math.max(ahora(), bloque?.timestamp ?? 0);
       const inscripcion = {
         cuit: BigInt(datos.cuit),
         razonSocial,
         datosHash,
         identityCommitment: datos.identityCommitment,
-        validaHasta: BigInt(ahora() + config.vigenciaProveedorDias * 86400),
-        venceFirma: BigInt(ahora() + config.validezFirmaSegundos),
+        validaHasta: BigInt(t + config.vigenciaProveedorDias * 86400),
+        venceFirma: BigInt(t + config.validezFirmaSegundos),
       };
       const { chainId, credenciales } = await cadena.conectar();
       const dominio = protocolo.dominioCredenciales(chainId, await credenciales.getAddress());
@@ -139,6 +144,20 @@ export function crearServicioInscripciones({ db, afip, cadena, protocolo, config
     historial: (wallet) =>
       db.inscripcionesDe(wallet).map(({ id, cuit, razon_social, estado, resultado, motivo, creada_en, datos_hash }) => ({
         id,
+        cuit,
+        razonSocial: razon_social,
+        estado,
+        resultado,
+        motivo,
+        creadaEn: creada_en,
+        datosHash: datos_hash,
+      })),
+
+    /** Todas las inscripciones (para el panel de admin): sin la sal. */
+    todas: () =>
+      db.todasLasInscripciones().map(({ id, wallet, cuit, razon_social, estado, resultado, motivo, creada_en, datos_hash }) => ({
+        id,
+        wallet,
         cuit,
         razonSocial: razon_social,
         estado,

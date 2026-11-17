@@ -1,5 +1,8 @@
 // Pantalla "Mi credencial": estado de la credencial de la wallet conectada y qué puede hacer con ella.
 
+import { datosDeInscripcion } from "../web3/backend.js";
+import { explicarError } from "../web3/errores.js";
+import { protocolo } from "../web3/identidad.js";
 import { obtenerSesion } from "../web3/sesion.js";
 import { bloqueConexion } from "./conexion.js";
 import {
@@ -9,23 +12,31 @@ import {
   formatearCuit,
   formatearFecha,
   html,
+  mostrarDialogo,
+  mostrarToast,
   nombreOrganismo,
   render,
 } from "./dom.js";
 
-/** Herramientas de cada rol. Se implementan en la siguiente etapa (contratos de licitaciones). */
+/** Herramientas de cada rol, con la pantalla donde se usan. */
 const HERRAMIENTAS = {
   EMPLEADO: [
-    ["Crear licitaciones", "Publicar una obra con su pliego, presupuesto, fecha de cierre y etapas."],
-    ["Evaluar y adjudicar", "Ver las ofertas abiertas al cierre y adjudicar con un dictamen fundado."],
+    ["Publicar licitaciones", "Una obra con su pliego, presupuesto, fecha de cierre y etapas.", "nueva-licitacion"],
+    ["Evaluar y adjudicar", "Ver las ofertas abiertas al cierre y adjudicar con un dictamen fundado.", "licitaciones"],
+    ["Asignar inspectores", "Elegir quién controla cada etapa de la obra adjudicada.", "licitaciones"],
   ],
-  INSPECTOR: [
-    ["Registrar avances de obra", "Validar cada etapa completada para liberar el pago correspondiente."],
-  ],
+  INSPECTOR: [["Registrar avances de obra", "Aprobar u observar cada etapa de las obras que tenés asignadas.", "licitaciones"]],
   PROVEEDOR: [
-    ["Ofertar en licitaciones abiertas", "Enviar ofertas anónimas: la prueba de conocimiento cero demuestra que estás habilitado sin revelar quién sos."],
+    [
+      "Ofertar de forma anónima",
+      "La prueba de conocimiento cero demuestra que estás habilitado sin revelar quién sos. El monto queda cifrado hasta el cierre.",
+      "licitaciones",
+    ],
+    ["Revelar tu autoría", "Después de la adjudicación, demostrás desde tu wallet cuál era tu oferta.", "licitaciones"],
   ],
 };
+
+const SIN_HASH = "0x" + "0".repeat(64);
 
 export function renderMiCredencial() {
   const contenedor = document.getElementById("mi-credencial-content");
@@ -38,27 +49,26 @@ export function renderMiCredencial() {
     ? html`<div class="notice-card">
         <span class="notice-symbol">◇</span>
         <div><strong>Tenés permisos de administración</strong>
-          <p>Podés aprobar proveedores, dar de alta funcionarios y revocar credenciales.</p></div>
+          <p>Podés dar de alta funcionarios, auditar las inscripciones y revocar credenciales.</p></div>
         <button class="button button-text" data-page="admin">Ir al panel <span>→</span></button>
       </div>`
     : "";
 
-  const { credencial, solicitud } = sesion;
+  const { credencial, inscripciones } = sesion;
 
   if (!credencial) {
-    const pendiente = solicitud?.estado === "PENDIENTE";
+    const ultima = inscripciones[0];
     return render(
       contenedor,
       html`<div class="empty-state">
           <span>◈</span>
-          <strong>${pendiente ? "Tu solicitud está en revisión" : "Esta wallet no tiene credencial"}</strong>
+          <strong>Esta wallet no tiene credencial</strong>
           <p>${
-            pendiente
-              ? `Solicitud #${solicitud.id} de ${solicitud.razonSocial}, enviada el ${formatearFecha(solicitud.creadaEn)}.`
+            ultima?.estado === "RECHAZADA"
+              ? `Tu inscripción de ${ultima.razonSocial} fue rechazada el ${formatearFecha(ultima.creadaEn)}: “${ultima.motivo}”`
               : `Wallet ${acortar(sesion.cuenta)}. Podés recorrer las licitaciones como cualquier ciudadano.`
           }</p>
-          <button class="button button-primary button-small" data-page="registro">
-            ${pendiente ? "Ver solicitud" : "Cómo participar"} <span>→</span></button>
+          <button class="button button-primary button-small" data-page="registro">Inscribirme como proveedor <span>→</span></button>
         </div>
         ${avisoAdmin}`,
     );
@@ -75,6 +85,7 @@ export function renderMiCredencial() {
   }[credencial.estado];
 
   const herramientas = HERRAMIENTAS[credencial.rol] ?? [];
+  const activa = credencial.estado === "VIGENTE";
 
   render(
     contenedor,
@@ -88,26 +99,43 @@ export function renderMiCredencial() {
           <dl class="datos">
             ${
               esProveedor
-                ? html`<dt>CUIT</dt><dd>${formatearCuit(credencial.cuit)}</dd>`
+                ? html`<dt>CUIT</dt><dd>${formatearCuit(credencial.cuit)}</dd>
+                    <dt>Ofertas anónimas</dt><dd>${credencial.enGrupo ? "Habilitado (tu identidad está en el grupo)" : "No habilitado"}</dd>`
                 : html`<dt>Organismo</dt><dd>${nombreOrganismo(credencial.organismoId)}</dd>`
             }
             <dt>Wallet</dt><dd><code>${acortar(sesion.cuenta)}</code></dd>
             <dt>Emitida</dt><dd>${formatearFecha(credencial.emitidaEn)}</dd>
             <dt>Vence</dt><dd>${formatearFecha(credencial.validaHasta)}</dd>
+            ${credencial.datosHash !== SIN_HASH && html`<dt>Datos</dt><dd><code title="${credencial.datosHash}">${acortar(credencial.datosHash)}</code>
+              ${esProveedor && html` <button class="button button-text button-small" id="verificar-datos">Verificar</button>`}</dd>`}
           </dl>
           ${estadoTexto}
         </div>
 
         <div class="panel-card">
-          <span class="role-tag">QUÉ VAS A PODER HACER</span>
+          <span class="role-tag">QUÉ PODÉS HACER</span>
           <ul class="herramientas">
             ${herramientas.map(
-              ([titulo, detalle]) => html`<li><strong>${titulo}</strong><span>${detalle}</span>
-                <span class="card-status status-done">Próximamente</span></li>`,
+              ([titulo, detalle, pagina]) => html`<li><strong>${titulo}</strong><span>${detalle}</span>
+                ${activa ? html`<button class="button button-text button-small" data-page="${pagina}">Ir →</button>` : html`<span class="card-status status-done">No disponible</span>`}</li>`,
             )}
           </ul>
         </div>
       </div>
       ${avisoAdmin}`,
   );
+
+  document.getElementById("verificar-datos")?.addEventListener("click", async () => {
+    try {
+      const r = await datosDeInscripcion(credencial.datosHash);
+      const ok = protocolo.datosHash(r.datos, r.sal) === credencial.datosHash;
+      mostrarDialogo(
+        "Tus datos fuera de la cadena",
+        html`<div class="verificacion ${ok ? "verificacion-ok" : "verificacion-error"}">${ok ? "✓ Coinciden con el hash de tu credencial." : "✗ No coinciden con el hash de tu credencial."}</div>
+          <pre class="bloque-json">${JSON.stringify(r.datos, null, 2)}</pre>`,
+      );
+    } catch (error) {
+      mostrarToast(explicarError(error), 6000);
+    }
+  });
 }

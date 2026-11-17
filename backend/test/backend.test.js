@@ -235,6 +235,11 @@ describe("API HTTP", () => {
     const { datosHash } = await r.json();
     r = await fetch(`${base}/api/funcionarios/hash/${datosHash}`, { headers });
     assert.equal((await r.json()).datos.dni, "28999000");
+    r = await fetch(`${base}/api/inscripciones/todas`, { headers });
+    assert.equal(r.status, 200);
+    assert.ok(Array.isArray(await r.json()));
+    r = await fetch(`${base}/api/inscripciones/todas`);
+    assert.equal(r.status, 401);
   });
 
   it("ipfs: sube y descarga por CID, con límite de tamaño", async () => {

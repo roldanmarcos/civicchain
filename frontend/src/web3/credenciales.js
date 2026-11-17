@@ -1,7 +1,10 @@
 // Lecturas y transacciones sobre CredencialNFT que usan las pantallas.
 
 import { ROLES, VIGENCIA_POR_DEFECTO_DIAS } from "../config/contracts.js";
-import { ESTADOS_SOLICITUD, ahora, bloqueInicial, obtenerContrato } from "./sesion.js";
+import { pedirInscripcion, registrarFuncionario } from "./backend.js";
+import { siblingsDe } from "./grupo.js";
+import { miIdentidad } from "./identidad.js";
+import { ahora, contratosDeLectura, obtenerContrato, obtenerFirmante, obtenerSesion } from "./sesion.js";
 
 const DIA = 24 * 60 * 60;
 
@@ -31,6 +34,7 @@ async function confirmar(txPromesa) {
  * @property {number} organismoId
  * @property {bigint} cuit
  * @property {number} validaHasta
+ * @property {string} datosHash
  * @property {boolean} revocada
  * @property {boolean} vencida
  * @property {"VIGENTE" | "VENCIDA" | "REVOCADA"} estado
@@ -38,7 +42,7 @@ async function confirmar(txPromesa) {
 
 /** @returns {Promise<CredencialListada[]>} */
 export async function leerCredenciales() {
-  const c = obtenerContrato();
+  const { credenciales: c } = await contratosDeLectura();
   const total = Number(await c.totalEmitidas());
   const ids = Array.from({ length: total }, (_, i) => BigInt(i + 1));
 
@@ -54,6 +58,7 @@ export async function leerCredenciales() {
         organismoId: Number(datos.organismoId),
         cuit: datos.cuit,
         validaHasta: Number(datos.validaHasta),
+        datosHash: datos.datosHash,
         revocada: datos.revocada,
         vencida,
         estado: datos.revocada ? "REVOCADA" : vencida ? "VENCIDA" : "VIGENTE",
@@ -62,97 +67,76 @@ export async function leerCredenciales() {
   );
 }
 
-/**
- * @typedef {object} SolicitudListada
- * @property {bigint} id
- * @property {string} wallet
- * @property {bigint} cuit
- * @property {string} razonSocial
- * @property {string} domicilioLegal
- * @property {string} rubros
- * @property {number} creadaEn
- * @property {"PENDIENTE" | "APROBADA" | "RECHAZADA" | "CANCELADA"} estado
- * @property {string | null} motivoRechazo
- */
-
-/** @returns {Promise<SolicitudListada[]>} Más recientes primero. */
-export async function leerSolicitudes() {
-  const c = obtenerContrato();
-  const desde = bloqueInicial();
-  // Domicilio, rubros y motivos de rechazo solo están en los eventos.
-  const [creadas, rechazadas] = await Promise.all([
-    c.queryFilter(c.filters.SolicitudCreada(), desde),
-    c.queryFilter(c.filters.SolicitudRechazada(), desde),
-  ]);
-  const motivos = new Map(rechazadas.map((e) => [e.args.solicitudId, e.args.motivo]));
-
-  const solicitudes = await Promise.all(
-    creadas.map(async (e) => {
-      const s = await c.solicitud(e.args.solicitudId);
-      return {
-        id: e.args.solicitudId,
-        wallet: s.wallet,
-        cuit: s.cuit,
-        razonSocial: s.razonSocial,
-        domicilioLegal: e.args.domicilioLegal,
-        rubros: e.args.rubros,
-        creadaEn: Number(s.creadaEn),
-        estado: ESTADOS_SOLICITUD[Number(s.estado)],
-        motivoRechazo: motivos.get(e.args.solicitudId) ?? null,
-      };
-    }),
-  );
-  return solicitudes.reverse();
-}
-
 /** Última credencial de una wallet cualquiera (para avisar antes de emitir). */
 export async function credencialDeWallet(wallet) {
-  const [tokenId, datos] = await obtenerContrato().credencialDe(wallet);
+  const { credenciales } = await contratosDeLectura();
+  const [tokenId, datos] = await credenciales.credencialDe(wallet);
   if (tokenId === 0n) return null;
   return { tokenId, revocada: datos.revocada, rol: ROLES[Number(datos.rol)], nombre: datos.nombre };
 }
 
 // ---------------------------------------------------------------------------
-// Transacciones
+// Proveedores: inscripción automática
 // ---------------------------------------------------------------------------
 
-/** Proveedor: pide su credencial. */
-export function solicitarInscripcion({ cuit, razonSocial, domicilioLegal, rubros }) {
-  return confirmar(obtenerContrato().solicitarInscripcion(BigInt(cuit), razonSocial, domicilioLegal, rubros));
+/**
+ * 1. Recupera la identidad anónima (firma). 2. Pide la autorización al backend (que verifica en AFIP).
+ * 3. Si la aprueba, manda `inscribirProveedor` con la firma del verificador.
+ * @returns {Promise<{ aprobada: boolean, motivo: string }>}
+ */
+export async function inscribirProveedor(datos, alAvanzar = () => {}) {
+  alAvanzar("Firmá en tu wallet para generar tu identidad anónima…");
+  const identidad = await miIdentidad();
+
+  alAvanzar("Verificando en AFIP…");
+  const r = await pedirInscripcion({ ...datos, wallet: obtenerSesion().cuenta, identityCommitment: identidad.commitment.toString() });
+  if (!r.aprobada) return r;
+
+  alAvanzar("Aprobada. Confirmá la transacción en tu wallet para recibir la credencial…");
+  await confirmar(obtenerContrato().inscribirProveedor(r.inscripcion, r.firma));
+  return r;
 }
 
-/** Proveedor: cancela su solicitud pendiente. */
-export function cancelarSolicitud(id) {
-  return confirmar(obtenerContrato().cancelarSolicitud(id));
-}
-
-/** Admin: aprueba una solicitud y emite la credencial. */
-export async function aprobarSolicitud(id, dias) {
-  return confirmar(obtenerContrato().aprobarSolicitud(id, await venceEn(dias)));
-}
-
-/** Admin: rechaza una solicitud. */
-export function rechazarSolicitud(id, motivo) {
-  return confirmar(obtenerContrato().rechazarSolicitud(id, motivo));
-}
+// ---------------------------------------------------------------------------
+// Empleados e inspectores: alta por el admin
+// ---------------------------------------------------------------------------
 
 /**
- * Admin: emite la credencial de un empleado o inspector con los datos del padrón.
- * @param {import("../services/padron-empleados/padron.js").Empleado} empleado
+ * Guarda los datos completos en el backend (firma de admin) y emite la credencial con su hash.
+ * @param {{ wallet: string, rol: "EMPLEADO" | "INSPECTOR", organismoId: number, nombre: string, dni: string,
+ *   area?: string, cargo?: string, resolucion?: string, domicilioLegal?: string }} datos
  */
-export async function emitirFuncionario(empleado, dias) {
-  const rol = ROLES.indexOf(empleado.funcion);
+export async function emitirFuncionario(datos, dias, alAvanzar = () => {}) {
+  alAvanzar("Firmá en tu wallet el acceso de administrador (una vez por sesión)…");
+  const { datosHash } = await registrarFuncionario(obtenerFirmante(), datos);
+  alAvanzar("Confirmá la transacción en tu wallet…");
   return confirmar(
-    obtenerContrato().emitirFuncionario(empleado.wallet, rol, empleado.organismoId, empleado.nombre, await venceEn(dias)),
+    obtenerContrato().emitirFuncionario(datos.wallet, ROLES.indexOf(datos.rol), datos.organismoId, datos.nombre, await venceEn(dias), datosHash),
   );
 }
 
-/** Admin: revoca una credencial. */
-export function revocar(tokenId, motivo) {
-  return confirmar(obtenerContrato().revocar(tokenId, motivo));
+// ---------------------------------------------------------------------------
+// Revocación y renovación
+// ---------------------------------------------------------------------------
+
+/** Admin: revoca una credencial. A los proveedores además los saca del grupo de Semaphore. */
+export async function revocar(tokenId, motivo) {
+  const c = obtenerContrato();
+  const { credenciales } = await contratosDeLectura();
+  const datos = await credenciales.credencial(tokenId);
+  if (ROLES[Number(datos.rol)] !== "PROVEEDOR") return confirmar(c.revocar(tokenId, motivo));
+  const [commitment, enGrupo] = await credenciales.compromisoDe(tokenId);
+  return confirmar(c.revocarProveedor(tokenId, motivo, enGrupo ? await siblingsDe(commitment) : []));
 }
 
 /** Admin: renueva una credencial. */
 export async function renovar(tokenId, dias) {
   return confirmar(obtenerContrato().renovar(tokenId, await venceEn(dias)));
+}
+
+/** Cualquiera: saca del grupo a un proveedor con la credencial vencida. */
+export async function quitarVencidoDelGrupo(tokenId) {
+  const { credenciales } = await contratosDeLectura();
+  const [commitment] = await credenciales.compromisoDe(tokenId);
+  return confirmar(obtenerContrato().quitarVencidoDelGrupo(tokenId, await siblingsDe(commitment)));
 }

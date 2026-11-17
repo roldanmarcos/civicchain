@@ -3,6 +3,7 @@
 //   GET  /api/salud                          estado del backend y de la conexión a la cadena
 //   POST /api/inscripciones                  verifica en AFIP y, si está todo bien, firma la autorización
 //   GET  /api/inscripciones?wallet=0x...     historial de inscripciones de una wallet
+//   GET  /api/inscripciones/todas            (admin) todas las inscripciones procesadas
 //   GET  /api/inscripciones/hash/:hash       datos completos + sal, para verificar el datosHash de la cadena
 //   POST /api/funcionarios                   (admin) guarda los datos de un empleado/inspector y devuelve el hash
 //   GET  /api/funcionarios/hash/:hash        (admin) datos completos de un funcionario
@@ -77,6 +78,14 @@ export function crearServidor({ config, cadena, inscripciones, funcionarios, ipf
         const wallet = url.searchParams.get("wallet");
         if (!wallet) throw new ErrorHttp(400, "Falta ?wallet=");
         return inscripciones.historial(wallet);
+      },
+    ],
+    [
+      "GET",
+      /^\/api\/inscripciones\/todas$/,
+      async ({ req }) => {
+        await autenticarAdmin(req.headers, cadena);
+        return inscripciones.todas();
       },
     ],
     [

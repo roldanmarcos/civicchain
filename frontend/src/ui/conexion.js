@@ -2,7 +2,7 @@
 // Los botones usan data-accion="conectar" / "cambiar-red", que maneja main.js.
 
 import { NETWORKS } from "../config/contracts.js";
-import { redObjetivo } from "../web3/sesion.js";
+import { qrDisponible, redObjetivo } from "../web3/sesion.js";
 import { html } from "./dom.js";
 
 /**
@@ -22,12 +22,14 @@ export function bloqueConexion(sesion) {
         <strong>Necesitás MetaMask</strong>
         <p>Instalá la extensión de MetaMask en tu navegador para participar.
           <a href="https://metamask.io/download/" target="_blank" rel="noopener">Descargar MetaMask ↗</a></p>
+        ${qrDisponible() && html`<p>O conectá la wallet de tu celular:</p><button class="button button-outline button-small" data-accion="conectar-qr">▦ Conectar con QR</button>`}
       </div>`;
     case "DESCONECTADO":
       return html`<div class="alerta">
         <strong>Conectá tu wallet</strong>
         <p>Tu wallet es tu identidad en CivicChain: no hay usuario ni contraseña.</p>
         <button class="button button-primary button-small" data-accion="conectar">◈ Conectar con MetaMask</button>
+        ${qrDisponible() && html`<button class="button button-outline button-small" data-accion="conectar-qr">▦ Conectar con QR</button>`}
       </div>`;
     case "RED_INCORRECTA":
       return html`<div class="alerta alerta-aviso">
@@ -39,7 +41,7 @@ export function bloqueConexion(sesion) {
       return html`<div class="alerta alerta-error">
         <strong>El contrato no está desplegado en esta red</strong>
         <p>Si estás usando el nodo local, puede que se haya reiniciado. Corré
-          <code>npx hardhat run scripts/deploy.ts --network localhost</code> y recargá la página.</p>
+          <code>npx hardhat run scripts/deploy.ts --network localhost</code> (y el seed) y recargá la página.</p>
       </div>`;
     default:
       return null;

@@ -81,6 +81,7 @@ export function abrirBase(ruta) {
     },
     inscripcionesDe: (wallet) =>
       db.prepare(`SELECT * FROM inscripciones WHERE wallet = ? ORDER BY id DESC`).all(wallet.toLowerCase()).map(fila),
+    todasLasInscripciones: () => db.prepare(`SELECT * FROM inscripciones ORDER BY id DESC LIMIT 500`).all().map(fila),
     inscripcionPorHash: (hash) => fila(db.prepare(`SELECT * FROM inscripciones WHERE datos_hash = ?`).get(hash)),
 
     guardarFuncionario(f) {

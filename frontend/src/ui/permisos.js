@@ -3,17 +3,19 @@
 // Es solo para la interfaz (no ofrecer lo que no corresponde): la seguridad real la dan los
 // contratos, que verifican el rol en cada transacción.
 //
-//                         Inicio  Licitaciones  Registrarse  Mi credencial  Administración
+//                         Inicio  Licitaciones  Registrarse  Mi credencial  Publicar  Administración
 //   Invitado                ✓          ✓             ✓
 //   Conectado sin nada      ✓          ✓             ✓
-//   Solicitud en curso      ✓          ✓             ✓             ✓
+//   Inscripción rechazada   ✓          ✓             ✓             ✓
 //   Credencial revocada     ✓          ✓             ✓             ✓
-//   Proveedor / Empleado /
-//   Inspector (o vencida)   ✓          ✓                           ✓
-//   Admin sin credencial    ✓                                                     ✓
-//   Admin con credencial    ✓          ✓                           ✓              ✓
+//   Empleado vigente        ✓          ✓                           ✓            ✓
+//   Proveedor / Inspector
+//   (o vencida)             ✓          ✓                           ✓
+//   Admin                   ✓          ✓                           (si tiene)              ✓
+//
+// Las licitaciones son públicas: las ve todo el mundo.
 
-/** @typedef {"inicio" | "licitaciones" | "detalle" | "registro" | "mi-credencial" | "admin"} Pagina */
+/** @typedef {"inicio" | "licitaciones" | "detalle" | "registro" | "mi-credencial" | "nueva-licitacion" | "admin"} Pagina */
 
 /**
  * @param {import("../web3/sesion.js").Sesion} sesion
@@ -21,24 +23,19 @@
  */
 export function paginasPermitidas(sesion) {
   /** @type {Set<Pagina>} */
-  const paginas = new Set(["inicio"]);
+  const paginas = new Set(["inicio", "licitaciones", "detalle"]);
   const conectado = sesion.estado === "CONECTADO";
-  const { credencial, solicitud, esAdmin } = sesion;
+  const { credencial, inscripciones, esAdmin } = sesion;
 
   // Fuera de línea (sin wallet, red incorrecta, cargando) se ve el espacio público.
-  if (!conectado) {
-    paginas.add("licitaciones").add("detalle").add("registro");
-    return paginas;
-  }
+  if (!conectado) return paginas.add("registro");
 
   // Con una credencial que no fue revocada ya tiene un rol: no tiene sentido registrarse
   // (si está vencida, la renueva un administrador).
   const tieneCredencial = Boolean(credencial && credencial.estado !== "REVOCADA");
-  const soloAdmin = esAdmin && !credencial;
-
-  if (!soloAdmin) paginas.add("licitaciones").add("detalle");
   if (!tieneCredencial && !esAdmin) paginas.add("registro");
-  if (credencial || solicitud) paginas.add("mi-credencial");
+  if (credencial || inscripciones.length > 0) paginas.add("mi-credencial");
+  if (credencial?.rol === "EMPLEADO" && credencial.estado === "VIGENTE") paginas.add("nueva-licitacion");
   if (esAdmin) paginas.add("admin");
 
   return paginas;
