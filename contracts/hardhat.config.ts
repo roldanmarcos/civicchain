@@ -68,9 +68,19 @@ export default defineConfig({
   tasks,
   solidity: {
     version: "0.8.28",
+    // Si no se puede descargar el compilador (por ejemplo, sin internet), se puede usar el solc de npm:
+    //   npm i -D solc@0.8.28 && SOLC_JS_PATH=node_modules/solc/soljson.js npm test
+    ...(process.env.SOLC_JS_PATH ? { path: process.env.SOLC_JS_PATH } : {}),
     settings: {
       optimizer: { enabled: true, runs: 200 },
     },
+    // Contratos de Semaphore que se despliegan tal cual vienen en npm (red local y tests).
+    // En Sepolia se usa el Semaphore que ya está desplegado (ver scripts/deploy.ts).
+    npmFilesToBuild: [
+      "@semaphore-protocol/contracts/Semaphore.sol",
+      "@semaphore-protocol/contracts/base/SemaphoreVerifier.sol",
+      "poseidon-solidity/PoseidonT3.sol",
+    ],
   },
   networks: {
     // Red simulada en memoria que usan los tests

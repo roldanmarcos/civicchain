@@ -3,6 +3,9 @@ pragma solidity ^0.8.28;
 
 import {ERC721} from "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
+import {EIP712} from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
+import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+import {ISemaphore} from "@semaphore-protocol/contracts/interfaces/ISemaphore.sol";
 import {ICredencialNFT} from "./interfaces/ICredencialNFT.sol";
 
 /// @dev Interfaz mínima de ERC-5192 (Minimal Soulbound NFTs).
@@ -16,48 +19,52 @@ interface IERC5192 {
 /// @title Credenciales de CivicChain
 /// @notice NFT intransferible (soulbound) que acredita el rol de una wallet:
 ///         proveedor, empleado estatal o inspector.
-/// @dev - Empleados e inspectores: los da de alta ADMIN_ROLE directamente (`emitirFuncionario`),
-///        después de verificarlos en el padrón de empleados. No se guarda su DNI.
-///      - Proveedores: se inscriben ellos mismos con `solicitarInscripcion` (CUIT y razón social,
-///        que son datos públicos). ADMIN_ROLE verifica el CUIT en AFIP y aprueba o rechaza.
+/// @dev - Empleados e inspectores: los da de alta ADMIN_ROLE directamente (`emitirFuncionario`).
+///        Sus datos personales (DNI, resolución) quedan en la base del backend; acá solo va su hash.
+///      - Proveedores: el backend verifica el CUIT en AFIP y, si todo está bien, firma una
+///        autorización (EIP-712). El proveedor la presenta con `inscribirProveedor` y recibe la
+///        credencial en esa misma transacción: no hay solicitudes pendientes ni aprobación manual.
+///        Las inscripciones rechazadas nunca llegan a la cadena (quedan registradas en el backend).
+///      - Al inscribirse, el proveedor agrega su compromiso de identidad de Semaphore al grupo de
+///        proveedores habilitados. Con eso después oferta de forma anónima.
 ///      - Una wallet tiene a lo sumo una credencial sin revocar, de un único rol.
 ///      - Un CUIT tiene a lo sumo una credencial sin revocar: así cada empresa tiene una sola
 ///        identidad para ofertar.
 ///      - Las credenciales revocadas no se queman: quedan como historial auditable.
-contract CredencialNFT is ERC721, AccessControl, ICredencialNFT, IERC5192 {
+contract CredencialNFT is ERC721, AccessControl, EIP712, ICredencialNFT, IERC5192 {
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
+    /// @notice Cuentas del backend que verifican en AFIP y firman las inscripciones.
+    bytes32 public constant VERIFICADOR_ROLE = keccak256("VERIFICADOR_ROLE");
+
+    bytes32 public constant INSCRIPCION_TYPEHASH = keccak256(
+        "Inscripcion(address wallet,uint64 cuit,string razonSocial,bytes32 datosHash,uint256 identityCommitment,uint64 validaHasta,uint64 venceFirma)"
+    );
 
     uint256 public constant MAX_NOMBRE = 120;
-    uint256 public constant MAX_TEXTO = 240;
 
-    enum EstadoSolicitud {
-        PENDIENTE,
-        APROBADA,
-        RECHAZADA,
-        CANCELADA
-    }
+    /// @notice Tiempo durante el que Semaphore sigue aceptando pruebas hechas con una raíz vieja del grupo.
+    /// @dev Hace falta porque cada alta cambia la raíz: una prueba generada justo antes de un alta sería
+    ///      rechazada. La contracara es que un proveedor revocado puede seguir probando durante este lapso.
+    ///      DUDA: ¿alcanza 1 hora? Se podría bajar si las altas son poco frecuentes.
+    uint256 public constant DURACION_RAIZ = 1 hours;
 
-    struct Solicitud {
-        address wallet;
-        uint64 cuit;
-        uint64 creadaEn;
-        EstadoSolicitud estado;
-        string razonSocial;
-    }
+    ISemaphore private immutable _semaphore;
+    uint256 private immutable _grupoProveedores;
 
     /// @dev Los ids empiezan en 1, así 0 significa "ninguno".
     uint256 private _proximoTokenId = 1;
-    uint256 private _proximaSolicitudId = 1;
 
     mapping(uint256 tokenId => Credencial) private _credenciales;
     /// @dev Última credencial emitida a cada wallet (puede estar revocada o vencida).
     mapping(address wallet => uint256 tokenId) private _tokenDeWallet;
     /// @dev Última credencial emitida para cada CUIT.
     mapping(uint64 cuit => uint256 tokenId) private _tokenDeCuit;
-
-    mapping(uint256 solicitudId => Solicitud) private _solicitudes;
-    /// @dev Solicitud pendiente de cada wallet (0 si no tiene).
-    mapping(address wallet => uint256 solicitudId) private _solicitudPendiente;
+    /// @dev Compromiso de identidad de Semaphore de cada credencial de proveedor.
+    mapping(uint256 tokenId => uint256 commitment) private _commitments;
+    /// @dev true mientras el compromiso del proveedor está en el grupo (puede ofertar).
+    mapping(uint256 tokenId => bool) private _enGrupo;
+    /// @dev Firmas del verificador ya usadas (evita reutilizar una autorización).
+    mapping(bytes32 digest => bool) private _firmaUsada;
 
     event CredencialEmitida(
         uint256 indexed tokenId,
@@ -66,23 +73,13 @@ contract CredencialNFT is ERC721, AccessControl, ICredencialNFT, IERC5192 {
         uint32 organismoId,
         uint64 cuit,
         string nombre,
-        uint64 validaHasta
+        uint64 validaHasta,
+        bytes32 datosHash
     );
     event CredencialRevocada(uint256 indexed tokenId, address indexed wallet, string motivo);
     event CredencialRenovada(uint256 indexed tokenId, address indexed wallet, uint64 validaHasta);
-
-    /// @dev Domicilio y rubros solo van en el evento (no se guardan en storage, para ahorrar gas).
-    event SolicitudCreada(
-        uint256 indexed solicitudId,
-        address indexed wallet,
-        uint64 indexed cuit,
-        string razonSocial,
-        string domicilioLegal,
-        string rubros
-    );
-    event SolicitudAprobada(uint256 indexed solicitudId, uint256 indexed tokenId);
-    event SolicitudRechazada(uint256 indexed solicitudId, string motivo);
-    event SolicitudCancelada(uint256 indexed solicitudId);
+    event ProveedorAgregadoAlGrupo(uint256 indexed tokenId, uint256 identityCommitment);
+    event ProveedorQuitadoDelGrupo(uint256 indexed tokenId, uint256 identityCommitment);
 
     error CredencialIntransferible();
     error WalletInvalida();
@@ -97,15 +94,27 @@ contract CredencialNFT is ERC721, AccessControl, ICredencialNFT, IERC5192 {
     error CredencialInexistente(uint256 tokenId);
     error CredencialYaRevocada(uint256 tokenId);
     error SinCredencialActiva(address wallet, Rol rol);
-    error SolicitudPendienteExistente(uint256 solicitudId);
-    error SolicitudInexistente(uint256 solicitudId);
-    error SolicitudNoPendiente(uint256 solicitudId);
-    error NoEsTuSolicitud(uint256 solicitudId);
+    error FirmaInvalida();
+    error FirmaVencida();
+    error FirmaYaUsada();
+    error UsarRevocarProveedor(uint256 tokenId);
+    error NoEsProveedor(uint256 tokenId);
+    error ProveedorFueraDelGrupo(uint256 tokenId);
+    error CredencialNoVencida(uint256 tokenId);
 
-    constructor(address admin) ERC721("CivicChain Credencial", "CIVIC-ID") {
-        if (admin == address(0)) revert WalletInvalida();
+    /// @param admin Recibe DEFAULT_ADMIN_ROLE y ADMIN_ROLE.
+    /// @param semaphore_ Contrato Semaphore donde se crea el grupo de proveedores.
+    constructor(address admin, ISemaphore semaphore_)
+        ERC721("CivicChain Credencial", "CIVIC-ID")
+        EIP712("CivicChain Credenciales", "1")
+    {
+        if (admin == address(0) || address(semaphore_) == address(0)) revert WalletInvalida();
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
         _grantRole(ADMIN_ROLE, admin);
+
+        _semaphore = semaphore_;
+        // Este contrato es el admin del grupo: solo él agrega y quita proveedores.
+        _grupoProveedores = semaphore_.createGroup(address(this), DURACION_RAIZ);
     }
 
     // ---------------------------------------------------------------------
@@ -115,102 +124,117 @@ contract CredencialNFT is ERC721, AccessControl, ICredencialNFT, IERC5192 {
     /// @notice Emite una credencial de empleado o inspector.
     /// @param nombre Nombre y apellido (queda público, para saber quién firma cada acción).
     /// @param validaHasta Timestamp de vencimiento; tiene que ser futuro.
+    /// @param datosHash Hash de los datos completos guardados en el backend (DNI, área, resolución...).
+    ///        Puede ser 0 si el alta se hace sin backend (por ejemplo, desde la consola).
     function emitirFuncionario(
         address wallet,
         Rol rol,
         uint32 organismoId,
         string calldata nombre,
-        uint64 validaHasta
+        uint64 validaHasta,
+        bytes32 datosHash
     ) external onlyRole(ADMIN_ROLE) returns (uint256) {
         if (rol == Rol.PROVEEDOR) revert RolInvalido();
         if (organismoId == 0) revert OrganismoInvalido();
-        return _emitir(wallet, rol, organismoId, 0, nombre, validaHasta);
+        return _emitir(wallet, rol, organismoId, 0, nombre, validaHasta, datosHash);
     }
 
     // ---------------------------------------------------------------------
-    // Proveedores (inscripción con solicitud)
+    // Proveedores (inscripción automática con la firma del verificador)
     // ---------------------------------------------------------------------
 
-    /// @notice Un proveedor pide su credencial desde su propia wallet.
+    /// @notice Datos de una inscripción de proveedor autorizada por el backend.
     /// @param cuit CUIT de la empresa, 11 dígitos sin guiones. Se valida el dígito verificador.
-    function solicitarInscripcion(
-        uint64 cuit,
-        string calldata razonSocial,
-        string calldata domicilioLegal,
-        string calldata rubros
-    ) external returns (uint256 solicitudId) {
-        if (!cuitValido(cuit)) revert CuitInvalido(cuit);
-        _validarTexto(razonSocial, MAX_NOMBRE);
-        _validarTexto(domicilioLegal, MAX_TEXTO);
-        _validarTexto(rubros, MAX_TEXTO);
-
-        uint256 pendiente = _solicitudPendiente[msg.sender];
-        if (pendiente != 0) revert SolicitudPendienteExistente(pendiente);
-        _exigirWalletLibre(msg.sender);
-        _exigirCuitLibre(cuit);
-
-        solicitudId = _proximaSolicitudId++;
-        _solicitudes[solicitudId] = Solicitud({
-            wallet: msg.sender,
-            cuit: cuit,
-            creadaEn: uint64(block.timestamp),
-            estado: EstadoSolicitud.PENDIENTE,
-            razonSocial: razonSocial
-        });
-        _solicitudPendiente[msg.sender] = solicitudId;
-
-        emit SolicitudCreada(solicitudId, msg.sender, cuit, razonSocial, domicilioLegal, rubros);
+    /// @param razonSocial Razón social tal como figura en AFIP (queda pública).
+    /// @param datosHash Hash de la inscripción completa guardada en el backend.
+    /// @param identityCommitment Compromiso de identidad de Semaphore del proveedor.
+    /// @param validaHasta Vencimiento de la credencial (lo fija el backend).
+    /// @param venceFirma Hasta cuándo se puede usar la autorización.
+    struct Inscripcion {
+        uint64 cuit;
+        string razonSocial;
+        bytes32 datosHash;
+        uint256 identityCommitment;
+        uint64 validaHasta;
+        uint64 venceFirma;
     }
 
-    /// @notice Aprueba una solicitud (después de verificar el CUIT en AFIP) y emite la credencial.
-    function aprobarSolicitud(
-        uint256 solicitudId,
-        uint64 validaHasta
-    ) external onlyRole(ADMIN_ROLE) returns (uint256 tokenId) {
-        Solicitud storage s = _solicitudPendienteExistente(solicitudId);
-        s.estado = EstadoSolicitud.APROBADA;
-        delete _solicitudPendiente[s.wallet];
+    /// @notice El proveedor se inscribe con la autorización que le firmó el backend.
+    /// @dev La firma cubre todos los datos y la wallet (msg.sender): no sirve para otra wallet
+    ///      ni para otros datos, y se puede usar una sola vez.
+    /// @param firma Firma EIP-712 de una cuenta con VERIFICADOR_ROLE.
+    function inscribirProveedor(Inscripcion calldata datos, bytes calldata firma) external returns (uint256 tokenId) {
+        if (block.timestamp > datos.venceFirma) revert FirmaVencida();
+        if (!cuitValido(datos.cuit)) revert CuitInvalido(datos.cuit);
+        _verificarFirma(datos, firma);
 
-        tokenId = _emitir(s.wallet, Rol.PROVEEDOR, 0, s.cuit, s.razonSocial, validaHasta);
-        emit SolicitudAprobada(solicitudId, tokenId);
+        tokenId = _emitir(msg.sender, Rol.PROVEEDOR, 0, datos.cuit, datos.razonSocial, datos.validaHasta, datos.datosHash);
+
+        // Semaphore revierte si el compromiso es 0, está fuera del campo o ya está en el grupo.
+        _semaphore.addMember(_grupoProveedores, datos.identityCommitment);
+        _commitments[tokenId] = datos.identityCommitment;
+        _enGrupo[tokenId] = true;
+        emit ProveedorAgregadoAlGrupo(tokenId, datos.identityCommitment);
     }
 
-    /// @notice Rechaza una solicitud. El proveedor puede volver a solicitar después.
-    function rechazarSolicitud(uint256 solicitudId, string calldata motivo) external onlyRole(ADMIN_ROLE) {
-        if (bytes(motivo).length == 0) revert MotivoVacio();
-        Solicitud storage s = _solicitudPendienteExistente(solicitudId);
-        s.estado = EstadoSolicitud.RECHAZADA;
-        delete _solicitudPendiente[s.wallet];
-        emit SolicitudRechazada(solicitudId, motivo);
-    }
-
-    /// @notice El propio proveedor cancela su solicitud pendiente (por ejemplo, para corregir un dato).
-    function cancelarSolicitud(uint256 solicitudId) external {
-        Solicitud storage s = _solicitudPendienteExistente(solicitudId);
-        if (s.wallet != msg.sender) revert NoEsTuSolicitud(solicitudId);
-        s.estado = EstadoSolicitud.CANCELADA;
-        delete _solicitudPendiente[msg.sender];
-        emit SolicitudCancelada(solicitudId);
+    /// @notice Digest EIP-712 que tiene que firmar el verificador (útil para depurar el backend).
+    function digestInscripcion(address wallet, Inscripcion calldata datos) public view returns (bytes32) {
+        return _hashTypedDataV4(
+            keccak256(
+                abi.encode(
+                    INSCRIPCION_TYPEHASH,
+                    wallet,
+                    datos.cuit,
+                    keccak256(bytes(datos.razonSocial)),
+                    datos.datosHash,
+                    datos.identityCommitment,
+                    datos.validaHasta,
+                    datos.venceFirma
+                )
+            )
+        );
     }
 
     // ---------------------------------------------------------------------
-    // Revocación y renovación (todos los roles)
+    // Revocación y renovación
     // ---------------------------------------------------------------------
 
-    /// @notice Revoca una credencial. Es definitivo: para volver a habilitar hay que emitir una nueva.
+    /// @notice Revoca la credencial de un empleado o inspector. Es definitivo.
     function revocar(uint256 tokenId, string calldata motivo) external onlyRole(ADMIN_ROLE) {
-        Credencial storage c = _credencialExistente(tokenId);
-        if (c.revocada) revert CredencialYaRevocada(tokenId);
-        if (bytes(motivo).length == 0) revert MotivoVacio();
+        if (_enGrupo[tokenId]) revert UsarRevocarProveedor(tokenId);
+        _revocar(tokenId, motivo);
+    }
 
-        c.revocada = true;
-        emit CredencialRevocada(tokenId, ownerOf(tokenId), motivo);
+    /// @notice Revoca la credencial de un proveedor y lo saca del grupo de Semaphore.
+    /// @param siblings Prueba de Merkle del compromiso del proveedor en el grupo actual. Se calcula
+    ///        fuera de la cadena con los eventos del grupo (la dApp lo hace sola).
+    function revocarProveedor(
+        uint256 tokenId,
+        string calldata motivo,
+        uint256[] calldata siblings
+    ) external onlyRole(ADMIN_ROLE) {
+        if (_credencialExistente(tokenId).rol != Rol.PROVEEDOR) revert NoEsProveedor(tokenId);
+        _revocar(tokenId, motivo);
+        if (_enGrupo[tokenId]) _quitarDelGrupo(tokenId, siblings);
+    }
+
+    /// @notice Saca del grupo a un proveedor con la credencial vencida, para que no pueda seguir
+    ///         ofertando. Lo puede llamar cualquiera (un bot de la dApp, un ciudadano).
+    /// @dev Semaphore no sabe de vencimientos: sin esto, un proveedor vencido podría seguir probando
+    ///      que está en el grupo. Si después se lo quiere renovar, hay que revocar y volver a inscribirlo.
+    function quitarVencidoDelGrupo(uint256 tokenId, uint256[] calldata siblings) external {
+        Credencial storage c = _credencialExistente(tokenId);
+        if (c.rol != Rol.PROVEEDOR) revert NoEsProveedor(tokenId);
+        if (block.timestamp <= c.validaHasta) revert CredencialNoVencida(tokenId);
+        if (!_enGrupo[tokenId]) revert ProveedorFueraDelGrupo(tokenId);
+        _quitarDelGrupo(tokenId, siblings);
     }
 
     /// @notice Cambia el vencimiento de una credencial no revocada (también sirve si ya venció).
     function renovar(uint256 tokenId, uint64 nuevaFecha) external onlyRole(ADMIN_ROLE) {
         Credencial storage c = _credencialExistente(tokenId);
         if (c.revocada) revert CredencialYaRevocada(tokenId);
+        if (c.rol == Rol.PROVEEDOR && !_enGrupo[tokenId]) revert ProveedorFueraDelGrupo(tokenId);
         if (nuevaFecha <= block.timestamp) revert FechaInvalida();
 
         c.validaHasta = nuevaFecha;
@@ -235,6 +259,16 @@ contract CredencialNFT is ERC721, AccessControl, ICredencialNFT, IERC5192 {
         return _credenciales[_tokenDeWallet[wallet]].organismoId;
     }
 
+    /// @inheritdoc ICredencialNFT
+    function semaphore() external view returns (address) {
+        return address(_semaphore);
+    }
+
+    /// @inheritdoc ICredencialNFT
+    function grupoProveedores() external view returns (uint256) {
+        return _grupoProveedores;
+    }
+
     /// @notice Última credencial emitida a `wallet` (tokenId 0 si nunca tuvo una).
     ///         Puede estar revocada o vencida: sirve para mostrar el estado en la dApp.
     function credencialDe(address wallet) external view returns (uint256 tokenId, Credencial memory datos) {
@@ -253,25 +287,14 @@ contract CredencialNFT is ERC721, AccessControl, ICredencialNFT, IERC5192 {
         return _credencialExistente(tokenId);
     }
 
-    /// @notice Datos de una solicitud por id.
-    function solicitud(uint256 solicitudId) external view returns (Solicitud memory) {
-        if (solicitudId == 0 || solicitudId >= _proximaSolicitudId) revert SolicitudInexistente(solicitudId);
-        return _solicitudes[solicitudId];
-    }
-
-    /// @notice Id de la solicitud pendiente de `wallet` (0 si no tiene).
-    function solicitudPendienteDe(address wallet) external view returns (uint256) {
-        return _solicitudPendiente[wallet];
+    /// @notice Compromiso de Semaphore de un proveedor y si sigue en el grupo.
+    function compromisoDe(uint256 tokenId) external view returns (uint256 commitment, bool enGrupo) {
+        return (_commitments[tokenId], _enGrupo[tokenId]);
     }
 
     /// @notice Cantidad total de credenciales emitidas (incluye revocadas).
     function totalEmitidas() external view returns (uint256) {
         return _proximoTokenId - 1;
-    }
-
-    /// @notice Cantidad total de solicitudes recibidas (en cualquier estado).
-    function totalSolicitudes() external view returns (uint256) {
-        return _proximaSolicitudId - 1;
     }
 
     /// @notice Valida un CUIT: 11 dígitos y dígito verificador correcto.
@@ -325,7 +348,8 @@ contract CredencialNFT is ERC721, AccessControl, ICredencialNFT, IERC5192 {
         uint32 organismoId,
         uint64 cuit,
         string memory nombre,
-        uint64 validaHasta
+        uint64 validaHasta,
+        bytes32 datosHash
     ) private returns (uint256 tokenId) {
         if (wallet == address(0)) revert WalletInvalida();
         if (validaHasta <= block.timestamp) revert FechaInvalida();
@@ -341,7 +365,8 @@ contract CredencialNFT is ERC721, AccessControl, ICredencialNFT, IERC5192 {
             validaHasta: validaHasta,
             revocada: false,
             cuit: cuit,
-            nombre: nombre
+            nombre: nombre,
+            datosHash: datosHash
         });
         _tokenDeWallet[wallet] = tokenId;
         if (cuit != 0) _tokenDeCuit[cuit] = tokenId;
@@ -349,7 +374,30 @@ contract CredencialNFT is ERC721, AccessControl, ICredencialNFT, IERC5192 {
         _safeMint(wallet, tokenId);
 
         emit Locked(tokenId);
-        emit CredencialEmitida(tokenId, wallet, rol, organismoId, cuit, nombre, validaHasta);
+        emit CredencialEmitida(tokenId, wallet, rol, organismoId, cuit, nombre, validaHasta, datosHash);
+    }
+
+    function _verificarFirma(Inscripcion calldata datos, bytes calldata firma) private {
+        bytes32 digest = digestInscripcion(msg.sender, datos);
+        if (_firmaUsada[digest]) revert FirmaYaUsada();
+        (address firmante, ECDSA.RecoverError err, ) = ECDSA.tryRecover(digest, firma);
+        if (err != ECDSA.RecoverError.NoError || !hasRole(VERIFICADOR_ROLE, firmante)) revert FirmaInvalida();
+        _firmaUsada[digest] = true;
+    }
+
+    function _revocar(uint256 tokenId, string calldata motivo) private {
+        Credencial storage c = _credencialExistente(tokenId);
+        if (c.revocada) revert CredencialYaRevocada(tokenId);
+        if (bytes(motivo).length == 0) revert MotivoVacio();
+        c.revocada = true;
+        emit CredencialRevocada(tokenId, ownerOf(tokenId), motivo);
+    }
+
+    function _quitarDelGrupo(uint256 tokenId, uint256[] calldata siblings) private {
+        uint256 commitment = _commitments[tokenId];
+        _semaphore.removeMember(_grupoProveedores, commitment, siblings);
+        _enGrupo[tokenId] = false;
+        emit ProveedorQuitadoDelGrupo(tokenId, commitment);
     }
 
     function _exigirWalletLibre(address wallet) private view {
@@ -370,12 +418,6 @@ contract CredencialNFT is ERC721, AccessControl, ICredencialNFT, IERC5192 {
     function _credencialExistente(uint256 tokenId) private view returns (Credencial storage c) {
         if (_ownerOf(tokenId) == address(0)) revert CredencialInexistente(tokenId);
         return _credenciales[tokenId];
-    }
-
-    function _solicitudPendienteExistente(uint256 solicitudId) private view returns (Solicitud storage s) {
-        if (solicitudId == 0 || solicitudId >= _proximaSolicitudId) revert SolicitudInexistente(solicitudId);
-        s = _solicitudes[solicitudId];
-        if (s.estado != EstadoSolicitud.PENDIENTE) revert SolicitudNoPendiente(solicitudId);
     }
 
     function supportsInterface(bytes4 interfaceId) public view override(ERC721, AccessControl) returns (bool) {
