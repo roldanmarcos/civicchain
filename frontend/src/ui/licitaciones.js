@@ -1,21 +1,26 @@
 // Licitaciones: tarjetas, estadísticas del inicio y la pantalla de detalle con las acciones de cada rol.
 // Todo se lee de la blockchain (y los documentos, de IPFS).
 
+import { formatEther } from "ethers";
 import { NETWORKS } from "../config/contracts.js";
 import { urlIpfs } from "../web3/backend.js";
 import { explicarError } from "../web3/errores.js";
 import {
-  abrirOfertas,
+  abrirSobres,
   adjudicar,
   asignarInspector,
   declararDesierta,
+  depositarFondos,
   inspectoresDisponibles,
   leerDetalle,
   miOferta,
   ofertar,
+  pesosAWei,
   registrarEvaluacion,
   revelarAutoria,
-  verOfertaDescifrada,
+  revelarIdentidades,
+  vencioLimite,
+  verificarApertura,
 } from "../web3/licitaciones.js";
 import { obtenerSesion, redObjetivo, rolActivo } from "../web3/sesion.js";
 import {
@@ -32,7 +37,7 @@ import {
 
 export const ETIQUETAS_ESTADO = {
   RECIBIENDO_OFERTAS: ["Recibiendo ofertas", ""],
-  APERTURA: ["Apertura de ofertas", "status-evaluating"],
+  APERTURA: ["Esperando apertura de sobres", "status-evaluating"],
   EVALUACION: ["En evaluación", "status-evaluating"],
   ADJUDICADA: ["Adjudicada", "status-executing"],
   EN_EJECUCION: ["En ejecución", "status-executing"],
@@ -92,6 +97,8 @@ const enlaceTx = (hash) => {
     ? html`<a href="${explorador}/tx/${hash}" target="_blank" rel="noopener"><code>${acortar(hash)}</code> ↗</a>`
     : html`<code title="${hash}">${acortar(hash)}</code>`;
 };
+const SIN_AUTOR = "0x0000000000000000000000000000000000000000";
+const eth = (wei) => `${formatEther(wei)} ETH`;
 const enlaceIpfs = (cid, texto = acortar(cid)) => (cid ? html`<a href="${urlIpfs(cid)}" target="_blank" rel="noopener">${texto} ↗</a>` : "—");
 
 let detalleActual = null;
@@ -163,12 +170,17 @@ export async function renderDetalle(id = detalleActual) {
           <span class="aside-label">CIERRE DE OFERTAS</span><strong class="aside-date">${formatearFechaHora(d.cierreOfertas)}</strong>
           <small class="texto-suave">${tiempoRelativo(d.cierreOfertas)}</small>
           <div class="aside-divider"></div>
-          <span class="aside-label">APERTURA HASTA</span><strong class="aside-date">${formatearFechaHora(d.finApertura)}</strong>
+          <span class="aside-label">ADJUDICACIÓN HASTA</span><strong class="aside-date">${formatearFechaHora(d.limiteAdjudicacion)}</strong>
+          <small class="texto-suave">En ese momento se revelan solas las identidades de los oferentes.</small>
           <div class="aside-divider"></div>
           ${
             ganadora
               ? html`<span class="aside-label">ADJUDICADA A</span><strong>Oferta #${ganadora.id} · ${formatearPesos(ganadora.monto)}</strong>
-                  <small class="texto-suave">${d.contratista !== "0x0000000000000000000000000000000000000000" ? `${ganadora.autorNombre ?? acortar(d.contratista)}` : "El ganador todavía no reveló su identidad"}</small>`
+                  <small class="texto-suave">${d.contratista !== SIN_AUTOR ? `${ganadora.autorNombre ?? acortar(d.contratista)}` : "Identidad todavía oculta"}</small>
+                  <div class="aside-divider"></div>
+                  <span class="aside-label">FONDOS (ESCROW)</span>
+                  <strong>${d.financiada ? eth(d.fondos) : "Sin depositar"}</strong>
+                  <small class="texto-suave">${d.financiada ? `sin pagar todavía, de ${eth(pesosAWei(ganadora.monto))} depositados` : `Monto a depositar: ${eth(pesosAWei(ganadora.monto))} (1 peso = 1 gwei)`}</small>`
               : html`<div class="sealed-info"><span>⌑</span><p><strong>Ofertas selladas</strong><br>Cifradas con timelock: nadie puede ver los montos antes del cierre.</p></div>`
           }
         </div>
@@ -179,29 +191,12 @@ export async function renderDetalle(id = detalleActual) {
   );
 
   renderPanelAccion(d, etapas);
-  contenedor.querySelectorAll("[data-ver-descifrada]").forEach((b) =>
-    b.addEventListener("click", async (e) => {
-      const boton = /** @type {HTMLButtonElement} */ (e.currentTarget);
-      const oferta = d.ofertas.find((o) => o.id === Number(boton.dataset.verDescifrada));
-      boton.disabled = true;
-      boton.textContent = "Descifrando…";
-      try {
-        const s = await verOfertaDescifrada(oferta);
-        boton.replaceWith(Object.assign(document.createElement("span"), { textContent: `${formatearPesos(s.monto)} (sin publicar)` }));
-      } catch (error) {
-        boton.disabled = false;
-        boton.textContent = "Ver monto";
-        mostrarToast(`No se pudo descifrar: ${error?.message ?? error}`, 6000);
-      }
-    }),
-  );
 }
 
 function seccionOfertas(d) {
   if (d.ofertas.length === 0) {
     return html`<p class="texto-suave">${d.estado === "RECIBIENDO_OFERTAS" ? "Todavía no se recibieron ofertas." : "No se recibieron ofertas."}</p>`;
   }
-  const verMonto = d.estado === "APERTURA" || d.estado === "EVALUACION";
   return html`<div class="tabla-scroll"><table class="tabla">
     <thead><tr><th>#</th><th>Enviada</th><th>Monto</th><th>Plazo</th><th>Propuesta técnica</th><th>Autor</th></tr></thead>
     <tbody>${d.ofertas.map(
@@ -211,13 +206,13 @@ function seccionOfertas(d) {
         <td>${
           o.abierta
             ? formatearPesos(o.monto)
-            : verMonto
-              ? html`<button class="button button-text button-small" data-ver-descifrada="${o.id}">Ver monto</button>`
-              : html`<span title="Cifrado con timelock hasta el cierre">⌑ Cifrado</span>`
+            : o.descartada
+              ? html`<span class="texto-peligro" title="No se pudo descifrar en la apertura">✗ Descartada</span>`
+              : html`<span title="Sobre cerrado: se abre junto con todos los demás">⌑ Sobre cerrado</span>`
         }</td>
         <td>${o.abierta ? `${o.plazoDias} días` : "—"}</td>
         <td>${enlaceIpfs(o.propuestaCID, "Ver")}</td>
-        <td>${o.autor !== "0x0000000000000000000000000000000000000000" ? html`${o.autorNombre ?? ""} <code>${acortar(o.autor)}</code>` : html`<span class="texto-suave">Anónimo</span>`}</td>
+        <td>${o.autor !== SIN_AUTOR ? html`${o.autorNombre ?? ""} <code>${acortar(o.autor)}</code>` : html`<span class="texto-suave">Anónimo</span>`}</td>
       </tr>`,
     )}</tbody>
   </table></div>
@@ -229,11 +224,12 @@ function seccionEtapas(d, etapas) {
     const evaluaciones = d.evaluaciones.filter((x) => x.etapa === i);
     const aprobada = i < d.etapasAprobadas;
     return html`<li class="${aprobada ? "etapa-aprobada" : i === d.etapasAprobadas && d.estado === "EN_EJECUCION" ? "etapa-actual" : ""}">
-      <div><strong>${e.nombre}</strong> <span class="texto-suave">· ${e.porcentaje}% del pago${
+      <div><strong>${e.nombre}</strong> <span class="texto-suave">· ${e.porcentaje}% de la obra${
         d.ofertaGanadora && d.ofertas.find((o) => o.id === d.ofertaGanadora)?.desglose[i] !== undefined
           ? ` · ${formatearPesos(d.ofertas.find((o) => o.id === d.ofertaGanadora).desglose[i])}`
           : ""
-      }</span> ${aprobada ? html`<span class="card-status">Aprobada</span>` : ""}</div>
+      }</span> ${aprobada ? html`<span class="card-status">Aprobada</span>` : ""}
+      ${d.pagos.filter((pg) => pg.etapa === i).map((pg) => html` <span class="card-status status-executing">Pagado ${eth(pg.monto)}</span> ${enlaceTx(pg.txHash)}`)}</div>
       ${evaluaciones.map(
         (ev) => html`<div class="evaluacion ${ev.aprobada ? "" : "evaluacion-observada"}">
           ${ev.aprobada ? "✓ Aprobada" : "⚠ Observada"} por ${ev.inspectorNombre ?? acortar(ev.inspector)}: ${ev.informe?.texto ?? ""}
@@ -248,6 +244,10 @@ function seccionEtapas(d, etapas) {
 function seccionRegistro(d) {
   const filas = [["Publicación", `${d.creadorNombre ?? acortar(d.creador)} publicó la licitación`, d.txPublicacion]];
   for (const o of d.ofertas) filas.push([`Oferta #${o.id}`, `Recibida (nullifier ${acortar(o.nullifier)})`, o.txHash]);
+  if (d.apertura) {
+    const validas = d.ofertas.filter((o) => o.abierta).length;
+    filas.push(["Apertura de sobres", `${d.apertura.empleadoNombre ?? acortar(d.apertura.empleado)} abrió los ${d.ofertas.length} sobres juntos (${validas} válidos)`, d.apertura.txHash]);
+  }
   if (d.decision) {
     filas.push([
       d.desierta ? "Desierta" : "Adjudicación",
@@ -257,6 +257,12 @@ function seccionRegistro(d) {
       d.decision.txHash,
     ]);
   }
+  for (const a of d.autorias) {
+    const o = d.ofertas.find((x) => x.id === a.ofertaId);
+    filas.push([`Identidad #${a.ofertaId}`, `${o?.autorNombre ?? acortar(o?.autor)}${a.ofertaId === d.ofertaGanadora ? " (ganadora)" : ""}`, a.txHash]);
+  }
+  if (d.deposito) filas.push(["Fondos", `Depósito en escrow de ${eth(d.deposito.monto)}`, d.deposito.txHash]);
+  for (const pg of d.pagos) filas.push([`Pago etapa ${pg.etapa + 1}`, `${eth(pg.monto)} al contratista`, pg.txHash]);
   return html`<div class="tabla-scroll"><table class="tabla"><tbody>${filas.map(
     ([evento, detalle, tx]) => html`<tr><td><strong>${evento}</strong></td><td>${detalle}</td><td>${enlaceTx(tx)}</td></tr>`,
   )}</tbody></table></div>`;
@@ -286,31 +292,79 @@ function renderPanelAccion(d, etapas) {
         <button class="button button-outline button-small" data-page="registro">Inscribirme →</button></div>`);
   }
 
-  if (d.estado === "APERTURA" && d.ofertas.some((o) => !o.abierta)) {
-    bloques.push(html`<div class="panel-card"><div class="panel-card-head"><strong>Apertura de ofertas</strong></div>
-      <p>El plazo venció y drand ya publicó la clave: cualquiera puede descifrar los montos y publicarlos en la cadena.
-        El bot de CivicChain lo hace solo; también podés hacerlo vos (pagás el gas).</p>
-      ${conectado ? html`<button class="button button-primary button-small" id="abrir-ofertas">Descifrar y publicar las ofertas</button>` : html`<p class="texto-suave">Conectá tu wallet para publicarlas.</p>`}
-      <div id="apertura-resultado"></div></div>`);
+  if (d.estado === "APERTURA") {
+    const vencido = vencioLimite(d);
+    if (esEmpleadoDelOrganismo && d.ofertas.length > 0 && !vencido) {
+      bloques.push(html`<div class="panel-card"><div class="panel-card-head"><strong>Apertura de sobres</strong><span class="role-tag">SOLO TU ORGANISMO</span></div>
+        <p>Cerró el plazo de ofertas. Cuando estés por evaluar, abrí <strong>todos los sobres juntos</strong>: tu navegador los
+          descifra con la clave de drand y se publican en una sola transacción. Los que no se puedan descifrar quedan descartados.
+          Las identidades siguen ocultas hasta el ${formatearFechaHora(d.limiteAdjudicacion)}.</p>
+        <button class="button button-primary button-small" id="abrir-sobres">Abrir los ${d.ofertas.length} sobres</button>
+        <div id="apertura-resultado"></div></div>`);
+    } else {
+      bloques.push(html`<div class="alerta"><strong>Sobres cerrados</strong>
+        <p>${
+          d.ofertas.length === 0
+            ? "No se recibieron ofertas."
+            : vencido
+              ? "Venció la fecha límite sin que el organismo abriera los sobres: solo se puede declarar desierta."
+              : `El organismo abre todas las ofertas juntas, en una sola transacción, cuando va a evaluar. Tiene tiempo hasta el ${formatearFechaHora(d.limiteAdjudicacion)}.`
+        }</p></div>`);
+    }
+    if (esEmpleadoDelOrganismo && (d.ofertas.length === 0 || vencido)) bloques.push(formularioAdjudicacion(d));
   }
 
-  if (d.estado === "EVALUACION" && esEmpleadoDelOrganismo) bloques.push(formularioAdjudicacion(d));
+  if (d.sobresAbiertos && d.ofertas.length > 0) {
+    bloques.push(html`<div class="panel-card"><div class="panel-card-head"><strong>Control ciudadano de la apertura</strong></div>
+      <p class="texto-suave">Descifrá vos mismo cada sobre con la clave pública de drand y comparalo con lo que publicó el organismo.</p>
+      <button class="button button-outline button-small" id="verificar-apertura">Verificar apertura</button>
+      <div id="verificacion-resultado"></div></div>`);
+  }
 
-  if (["ADJUDICADA", "EN_EJECUCION", "FINALIZADA", "DESIERTA"].includes(d.estado) && rol === "PROVEEDOR" && d.ofertas.length > 0) {
-    bloques.push(html`<div class="panel-card"><div class="panel-card-head"><strong>Revelar tu autoría</strong></div>
-      <p>La decisión ya está tomada. Si ofertaste, demostrá desde tu wallet cuál era tu oferta. ${d.estado === "ADJUDICADA" ? "Si ganaste, es necesario para empezar la obra." : ""}</p>
+  if (d.estado === "EVALUACION" && esEmpleadoDelOrganismo) {
+    bloques.push(
+      vencioLimite(d)
+        ? html`<div class="alerta alerta-aviso"><strong>Venció la fecha límite de adjudicación</strong><p>Las identidades ya se pueden conocer, así que solo queda declararla desierta.</p></div>${formularioAdjudicacion({ ...d, ofertas: [] })}`
+        : formularioAdjudicacion(d),
+    );
+  }
+
+  const sinIdentidad = d.ofertas.filter((o) => o.autor === SIN_AUTOR);
+  if (vencioLimite(d) && sinIdentidad.length > 0 && d.estado !== "RECIBIENDO_OFERTAS") {
+    bloques.push(html`<div class="panel-card"><div class="panel-card-head"><strong>Revelar identidades</strong></div>
+      <p>Pasó la fecha límite de adjudicación: drand ya publicó la clave y cualquiera puede descifrar quién está detrás de
+        cada oferta. El bot de CivicChain lo hace solo; también podés hacerlo vos (pagás el gas).</p>
+      ${conectado ? html`<button class="button button-primary button-small" id="revelar-identidades">Revelar ${sinIdentidad.length} identidad(es)</button>` : html`<p class="texto-suave">Conectá tu wallet para publicarlas.</p>`}
+      <div id="identidades-resultado"></div></div>`);
+  }
+
+  if (d.estado === "ADJUDICADA" && rol === "PROVEEDOR" && d.ofertas.length > 0 && !vencioLimite(d)) {
+    bloques.push(html`<div class="panel-card"><div class="panel-card-head"><strong>¿Ganaste? Revelate antes</strong></div>
+      <p>Las identidades se revelan solas el ${formatearFechaHora(d.limiteAdjudicacion)}. Si la oferta ganadora es tuya y querés
+        empezar la obra antes, podés demostrarlo ahora desde tu wallet.</p>
       <button class="button button-primary button-small" id="revelar-autoria">Buscar mi oferta y revelar</button>
       <div id="revelar-resultado"></div></div>`);
   }
 
+  if (esEmpleadoDelOrganismo && d.ofertaGanadora && !d.financiada) {
+    const ganadora = d.ofertas.find((o) => o.id === d.ofertaGanadora);
+    bloques.push(html`<div class="panel-card"><div class="panel-card-head"><strong>Depositar los fondos de la obra</strong><span class="role-tag">ESCROW</span></div>
+      <p>El monto adjudicado queda en el contrato y se le paga solo al contratista cada vez que un inspector aprueba una
+        etapa (lo que cotizó para esa etapa). Monto: ${formatearPesos(ganadora.monto)} = <strong>${eth(pesosAWei(ganadora.monto))}</strong> (1 peso = 1 gwei).</p>
+      <button class="button button-primary button-small" id="depositar-fondos">Depositar ${eth(pesosAWei(ganadora.monto))}</button></div>`);
+  }
+
   if (esEmpleadoDelOrganismo && ["ADJUDICADA", "EN_EJECUCION"].includes(d.estado)) {
     bloques.push(html`<div class="panel-card"><div class="panel-card-head"><strong>Asignar inspector</strong></div>
-      <form id="form-inspector" class="busqueda-dni"><div class="form-field"><label for="inspector-wallet">Inspector</label>
+      <form id="form-inspector" class="busqueda-dni"><div class="form-field"><label for="inspector-wallet">Inspector de ${nombreOrganismo(d.organismoId)}</label>
         <select id="inspector-wallet"><option value="">Cargando inspectores…</option></select></div>
         <button class="button button-outline button-small" type="submit">Asignar</button></form></div>`);
   }
 
-  if (esInspectorAsignado && d.estado === "EN_EJECUCION") bloques.push(formularioEvaluacion(d, etapas));
+  if (esInspectorAsignado && d.estado === "EN_EJECUCION" && !d.financiada) {
+    bloques.push(html`<div class="alerta alerta-aviso"><strong>Todavía no se depositaron los fondos</strong><p>Hasta que el organismo deposite el monto adjudicado no se pueden aprobar etapas (no habría con qué pagarlas).</p></div>`);
+  }
+  if (esInspectorAsignado && d.estado === "EN_EJECUCION" && d.financiada) bloques.push(formularioEvaluacion(d, etapas));
 
   render(panel, html`${bloques}`);
   conectarPanel(d, etapas);
@@ -384,6 +438,9 @@ function formularioEvaluacion(d, etapas) {
   const etapa = d.etapasAprobadas;
   return html`<form class="panel-card" id="form-evaluacion" novalidate>
     <div class="panel-card-head"><strong>Evaluar etapa ${etapa + 1}: ${etapas[etapa].nombre}</strong><span class="role-tag">INSPECCIÓN</span></div>
+    <p class="texto-suave">Si la aprobás, el contrato le paga solo al contratista lo que cotizó para esta etapa:
+      ${formatearPesos(d.ofertas.find((o) => o.id === d.ofertaGanadora)?.desglose[etapa] ?? 0n)}
+      (${eth(pesosAWei(d.ofertas.find((o) => o.id === d.ofertaGanadora)?.desglose[etapa] ?? 0n))}).</p>
     <div class="form-field"><label for="informe-texto">Informe</label><textarea id="informe-texto" rows="3" required></textarea></div>
     <div class="form-field"><label for="informe-archivo">Acta o fotos (PDF, opcional)</label><input id="informe-archivo" type="file" accept="application/pdf,image/*"></div>
     <div id="evaluacion-resultado"></div>
@@ -437,16 +494,65 @@ function conectarPanel(d, etapas) {
     });
   }
 
-  // Apertura
-  document.getElementById("abrir-ofertas")?.addEventListener("click", async (ev) => {
+  // Apertura de sobres (todos juntos)
+  document.getElementById("abrir-sobres")?.addEventListener("click", async (ev) => {
     const boton = /** @type {HTMLButtonElement} */ (ev.currentTarget);
     boton.disabled = true;
     try {
-      const { abiertas, problemas } = await abrirOfertas(d, (t) => mensaje("apertura-resultado", t));
-      mensaje("apertura-resultado", `${abiertas} oferta(s) publicadas.${problemas.length ? ` Problemas: ${problemas.join("; ")}` : ""}`, problemas.length ? "alerta-aviso" : "alerta-ok");
+      const { validas, descartadas } = await abrirSobres(d, (t) => mensaje("apertura-resultado", t));
+      mensaje("apertura-resultado", `Sobres abiertos: ${validas} válidos${descartadas ? `, ${descartadas} descartados` : ""}.`, "alerta-ok");
+      mostrarToast("Sobres abiertos.");
       renderDetalle();
     } catch (error) {
       mensaje("apertura-resultado", explicarError(error), "alerta-error");
+      boton.disabled = false;
+    }
+  });
+
+  // Control ciudadano
+  document.getElementById("verificar-apertura")?.addEventListener("click", async (ev) => {
+    const boton = /** @type {HTMLButtonElement} */ (ev.currentTarget);
+    boton.disabled = true;
+    mensaje("verificacion-resultado", "Descifrando cada sobre con la clave pública de drand…");
+    try {
+      const r = await verificarApertura(d);
+      const todo = r.every((x) => x.ok);
+      render(
+        document.getElementById("verificacion-resultado"),
+        html`<div class="verificacion ${todo ? "verificacion-ok" : "verificacion-error"}">${todo ? "✓ La apertura coincide con los sobres cifrados." : "✗ Hay diferencias con los sobres cifrados."}</div>
+          <ul>${r.map((x) => html`<li>${x.ok ? "✓" : "✗"} Oferta #${x.id}: ${x.detalle}</li>`)}</ul>`,
+      );
+    } catch (error) {
+      mensaje("verificacion-resultado", explicarError(error), "alerta-error");
+    } finally {
+      boton.disabled = false;
+    }
+  });
+
+  // Identidades
+  document.getElementById("revelar-identidades")?.addEventListener("click", async (ev) => {
+    const boton = /** @type {HTMLButtonElement} */ (ev.currentTarget);
+    boton.disabled = true;
+    try {
+      const { reveladas, problemas } = await revelarIdentidades(d, (t) => mensaje("identidades-resultado", t));
+      mensaje("identidades-resultado", `${reveladas} identidad(es) reveladas.${problemas.length ? ` Sin revelar: ${problemas.join("; ")}` : ""}`, problemas.length ? "alerta-aviso" : "alerta-ok");
+      renderDetalle();
+    } catch (error) {
+      mensaje("identidades-resultado", explicarError(error), "alerta-error");
+      boton.disabled = false;
+    }
+  });
+
+  // Fondos
+  document.getElementById("depositar-fondos")?.addEventListener("click", async (ev) => {
+    const boton = /** @type {HTMLButtonElement} */ (ev.currentTarget);
+    boton.disabled = true;
+    try {
+      await depositarFondos(d.id);
+      mostrarToast("Fondos depositados en el contrato.");
+      renderDetalle();
+    } catch (error) {
+      mostrarToast(explicarError(error), 6000);
       boton.disabled = false;
     }
   });
@@ -491,7 +597,7 @@ function conectarPanel(d, etapas) {
         mensaje("revelar-resultado", "No encontramos ninguna oferta tuya en esta licitación.", "alerta-aviso");
         return;
       }
-      if (mia.autor !== "0x0000000000000000000000000000000000000000") {
+      if (mia.autor !== SIN_AUTOR) {
         mensaje("revelar-resultado", `Tu oferta es la #${mia.id} y ya está revelada.`, "alerta-ok");
         return;
       }
@@ -509,13 +615,13 @@ function conectarPanel(d, etapas) {
   const formInsp = /** @type {HTMLFormElement | null} */ (document.getElementById("form-inspector"));
   if (formInsp) {
     const select = /** @type {HTMLSelectElement} */ (document.getElementById("inspector-wallet"));
-    inspectoresDisponibles().then((lista) => {
+    inspectoresDisponibles(d.organismoId).then((lista) => {
       const libres = lista.filter((i) => !d.inspectores.some((a) => a.wallet === i.wallet));
       render(
         select,
         libres.length
           ? html`${libres.map((i) => html`<option value="${i.wallet}">${i.nombre} · ${nombreOrganismo(i.organismoId)}</option>`)}`
-          : html`<option value="">No hay inspectores disponibles</option>`,
+          : html`<option value="">No hay inspectores de este organismo disponibles</option>`,
       );
     });
     formInsp.addEventListener("submit", async (ev) => {
@@ -548,7 +654,7 @@ function conectarPanel(d, etapas) {
       try {
         mensaje("evaluacion-resultado", "Subiendo el informe a IPFS y esperando tu firma…");
         await registrarEvaluacion(d.id, d.etapasAprobadas, aprobada, texto, archivo);
-        mostrarToast(aprobada ? "Etapa aprobada." : "Observación registrada.");
+        mostrarToast(aprobada ? "Etapa aprobada: se le pagó al contratista." : "Observación registrada.");
         delete formEval.dataset.ocupado;
         renderDetalle();
       } catch (error) {

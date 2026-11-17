@@ -3,7 +3,7 @@
 import { readFileSync } from "node:fs";
 import * as ethers from "ethers";
 import { crearClienteAfip } from "./afip/afip.js";
-import { crearBotApertura } from "./apertura.js";
+import { crearBotIdentidades } from "./identidades.js";
 import { crearCadena } from "./cadena.js";
 import { config } from "./config.js";
 import { abrirBase } from "./db.js";
@@ -35,8 +35,8 @@ servidor.listen(config.puerto, () => {
   console.log(`  Relayer:     ${cadena.relayer.address} (necesita ETH para pagar el gas)`);
 });
 
-const bot = crearBotApertura({ cadena });
-bot.iniciar(config.intervaloAperturaMs);
+const bot = crearBotIdentidades({ cadena });
+bot.iniciar(config.intervaloBotMs);
 
 process.on("SIGINT", () => {
   bot.detener();

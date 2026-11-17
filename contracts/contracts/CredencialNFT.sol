@@ -42,11 +42,13 @@ contract CredencialNFT is ERC721, AccessControl, EIP712, ICredencialNFT, IERC519
 
     uint256 public constant MAX_NOMBRE = 120;
 
-    /// @notice Tiempo durante el que Semaphore sigue aceptando pruebas hechas con una raíz vieja del grupo.
-    /// @dev Hace falta porque cada alta cambia la raíz: una prueba generada justo antes de un alta sería
-    ///      rechazada. La contracara es que un proveedor revocado puede seguir probando durante este lapso.
-    ///      DUDA: ¿alcanza 1 hora? Se podría bajar si las altas son poco frecuentes.
-    uint256 public constant DURACION_RAIZ = 1 hours;
+    /// @notice Tiempo inicial durante el que Semaphore sigue aceptando pruebas hechas con una raíz vieja.
+    /// @dev Cada alta o baja de un proveedor cambia la raíz del grupo: una prueba armada justo antes del
+    ///      cambio usa la raíz vieja y, sin este margen, sería rechazada (la dApp pide volver a intentar).
+    ///      La contracara: un proveedor revocado puede seguir probando con la raíz vieja durante este lapso.
+    ///      Armar y mandar una prueba tarda segundos, así que 5 minutos sobran. El admin lo puede cambiar
+    ///      con `configurarDuracionRaiz` (con 0 solo vale la raíz actual).
+    uint256 public constant DURACION_RAIZ_INICIAL = 5 minutes;
 
     ISemaphore private immutable _semaphore;
     uint256 private immutable _grupoProveedores;
@@ -80,6 +82,7 @@ contract CredencialNFT is ERC721, AccessControl, EIP712, ICredencialNFT, IERC519
     event CredencialRenovada(uint256 indexed tokenId, address indexed wallet, uint64 validaHasta);
     event ProveedorAgregadoAlGrupo(uint256 indexed tokenId, uint256 identityCommitment);
     event ProveedorQuitadoDelGrupo(uint256 indexed tokenId, uint256 identityCommitment);
+    event DuracionRaizCambiada(uint256 segundos);
 
     error CredencialIntransferible();
     error WalletInvalida();
@@ -114,7 +117,7 @@ contract CredencialNFT is ERC721, AccessControl, EIP712, ICredencialNFT, IERC519
 
         _semaphore = semaphore_;
         // Este contrato es el admin del grupo: solo él agrega y quita proveedores.
-        _grupoProveedores = semaphore_.createGroup(address(this), DURACION_RAIZ);
+        _grupoProveedores = semaphore_.createGroup(address(this), DURACION_RAIZ_INICIAL);
     }
 
     // ---------------------------------------------------------------------
@@ -239,6 +242,13 @@ contract CredencialNFT is ERC721, AccessControl, EIP712, ICredencialNFT, IERC519
 
         c.validaHasta = nuevaFecha;
         emit CredencialRenovada(tokenId, ownerOf(tokenId), nuevaFecha);
+    }
+
+    /// @notice Cambia cuánto tiempo se aceptan pruebas con una raíz vieja del grupo (ver DURACION_RAIZ_INICIAL).
+    /// @dev Ojo: Semaphore aplica el nuevo valor también a las raíces anteriores.
+    function configurarDuracionRaiz(uint256 segundos) external onlyRole(ADMIN_ROLE) {
+        _semaphore.updateGroupMerkleTreeDuration(_grupoProveedores, segundos);
+        emit DuracionRaizCambiada(segundos);
     }
 
     // ---------------------------------------------------------------------

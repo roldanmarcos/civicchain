@@ -477,6 +477,19 @@
   },
   {
     "anonymous": false,
+    "inputs": [
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "segundos",
+        "type": "uint256"
+      }
+    ],
+    "name": "DuracionRaizCambiada",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
     "inputs": [],
     "name": "EIP712DomainChanged",
     "type": "event"
@@ -673,7 +686,7 @@
   },
   {
     "inputs": [],
-    "name": "DURACION_RAIZ",
+    "name": "DURACION_RAIZ_INICIAL",
     "outputs": [
       {
         "internalType": "uint256",
@@ -782,6 +795,19 @@
       }
     ],
     "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "segundos",
+        "type": "uint256"
+      }
+    ],
+    "name": "configurarDuracionRaiz",
+    "outputs": [],
+    "stateMutability": "nonpayable",
     "type": "function"
   },
   {

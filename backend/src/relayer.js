@@ -15,8 +15,8 @@ const esHex = (v, bytes) => typeof v === "string" && new RegExp(`^0x[0-9a-fA-F]{
 function validarOferta(body) {
   const p = body?.prueba;
   if (!/^\d+$/.test(String(body?.licitacionId ?? ""))) throw new ErrorDeDatos("Falta la licitación.");
-  if (!esHex(body.cifrado)) throw new ErrorDeDatos("El cifrado no es válido.");
-  if (body.cifrado.length > 2 + 2 * 8192) throw new ErrorDeDatos("El cifrado es demasiado grande.");
+  if (!esHex(body.cifrado) || !esHex(body.cifradoIdentidad)) throw new ErrorDeDatos("Los cifrados no son válidos.");
+  if (body.cifrado.length > 2 + 2 * 8192 || body.cifradoIdentidad.length > 2 + 2 * 8192) throw new ErrorDeDatos("El cifrado es demasiado grande.");
   if (!esHex(body.compromisoMonto, 32) || !esHex(body.compromisoAutoria, 32)) throw new ErrorDeDatos("Compromisos inválidos.");
   if (typeof body.propuestaCID !== "string" || body.propuestaCID.length > 200) throw new ErrorDeDatos("CID inválido.");
   if (!p || !Array.isArray(p.points) || p.points.length !== 8) throw new ErrorDeDatos("La prueba no es válida.");
@@ -24,6 +24,7 @@ function validarOferta(body) {
     return {
       licitacionId: BigInt(body.licitacionId),
       cifrado: body.cifrado,
+      cifradoIdentidad: body.cifradoIdentidad,
       compromisoMonto: body.compromisoMonto,
       compromisoAutoria: body.compromisoAutoria,
       propuestaCID: body.propuestaCID,
@@ -74,7 +75,8 @@ export function crearRelayer({ cadena }) {
     async enviarOferta(body) {
       const o = validarOferta(body);
       const { licitaciones, relayer } = await cadena.conectar();
-      const args = [o.licitacionId, o.cifrado, o.compromisoMonto, o.compromisoAutoria, o.propuestaCID, o.prueba];
+      const { licitacionId, prueba, ...oferta } = o;
+      const args = [licitacionId, oferta, prueba];
       try {
         // Primero se simula: si va a fallar, no se gasta gas y el error es más claro.
         await licitaciones.ofertar.staticCall(...args);

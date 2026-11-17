@@ -333,6 +333,19 @@ describe("CredencialNFT", () => {
         .withArgs(tokenId);
     });
 
+    it("solo el admin cambia la duración de las raíces viejas del grupo", async () => {
+      const { credenciales, semaphore, grupoId, otro } = await loadFixture(desplegar);
+      await expect(credenciales.connect(otro).configurarDuracionRaiz(0)).to.be.revertedWithCustomError(
+        credenciales,
+        "AccessControlUnauthorizedAccount",
+      );
+      await expect(credenciales.configurarDuracionRaiz(60))
+        .to.emit(credenciales, "DuracionRaizCambiada")
+        .withArgs(60n)
+        .and.to.emit(semaphore, "GroupMerkleTreeDurationUpdated")
+        .withArgs(grupoId, 300n, 60n);
+    });
+
     it("revocarProveedor solo acepta proveedores", async () => {
       const { credenciales, tokenId } = await loadFixture(conEmpleado);
       await expect(credenciales.revocarProveedor(tokenId, "Baja", []))

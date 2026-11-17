@@ -59,6 +59,7 @@ const padron = await clientePadron();
 const funcionarios = [
   { dni: "30111222", cuenta: 1, vence, detalle: "empleada de Quilmes" },
   { dni: "28999000", cuenta: 2, vence, detalle: "inspector de Berazategui" },
+  { dni: "32100200", cuenta: 17, vence, detalle: "inspectora de Quilmes (controla las obras de Ana)" },
   { dni: "33444555", cuenta: 4, vence: venceEnCincoMinutos, detalle: "empleado de Avellaneda, vence en 5 minutos" },
   { dni: "27666777", cuenta: 5, vence, detalle: "de baja en el padrón, se revoca" },
   { dni: "25888999", cuenta: 9, vence, detalle: "de baja en el padrón, pero la credencial sigue sin revocar" },
@@ -149,7 +150,8 @@ for (const p of proveedores) {
 }
 
 // 4. Licitaciones de ejemplo, publicadas por Ana Pérez (cuenta #1, Municipalidad de Quilmes).
-//    Una cierra en 15 minutos (para mostrar ofertas y apertura en una clase) y otra en una semana.
+//    Una cierra en 15 minutos y se adjudica hasta los 35 (para mostrar todo el flujo en una clase) y otra
+//    cierra en una semana.
 console.log("\nLicitaciones:");
 const { address: licitacionesAddress } = await leerDeployment(chainId, "Licitaciones");
 const licitaciones = await ethers.getContractAt("Licitaciones", licitacionesAddress, cuentas[1]);
@@ -169,7 +171,8 @@ const ejemplos = [
     ubicacion: "Quilmes, Buenos Aires",
     presupuesto: 48_500_000n,
     cierreEnMinutos: 15,
-    aperturaMinutos: 10,
+    // Fecha límite de adjudicación: ahí se revelan solas las identidades de los ofertantes.
+    limiteEnMinutos: 35,
     etapas: [
       { nombre: "Demolición y obra gruesa", porcentaje: 30 },
       { nombre: "Instalaciones eléctricas y sanitarias", porcentaje: 40 },
@@ -182,7 +185,7 @@ const ejemplos = [
     ubicacion: "Quilmes, Buenos Aires",
     presupuesto: 76_200_000n,
     cierreEnMinutos: 7 * 24 * 60,
-    aperturaMinutos: 24 * 60,
+    limiteEnMinutos: 14 * 24 * 60,
     etapas: [
       { nombre: "Movimiento de suelos", porcentaje: 20 },
       { nombre: "Desagües pluviales", porcentaje: 35 },
@@ -203,9 +206,11 @@ for (const e of ejemplos) {
     };
     const metadataCID = await subirAlBackend(JSON.stringify(metadata), "application/json");
     // Fechas según el reloj real (y no el del último bloque), igual que la dApp y la ronda de drand.
-    const cierre = BigInt(Math.floor(Date.now() / 1000) + e.cierreEnMinutos * 60);
+    const ahora = Math.floor(Date.now() / 1000);
+    const cierre = BigInt(ahora + e.cierreEnMinutos * 60);
+    const limite = BigInt(ahora + e.limiteEnMinutos * 60);
     await (
-      await licitaciones.crearLicitacion(e.titulo, metadataCID, e.presupuesto, cierre, e.aperturaMinutos * 60, e.etapas.map((x) => x.porcentaje * 100))
+      await licitaciones.crearLicitacion(e.titulo, metadataCID, e.presupuesto, cierre, limite, e.etapas.map((x) => x.porcentaje * 100))
     ).wait();
   });
 }

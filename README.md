@@ -8,12 +8,12 @@ Trabajo Práctico Integrador — Seminario de Blockchain & Smart Contracts, UNQ.
 | Fase | Qué pasa | Dónde |
 |---|---|---|
 | 0. Habilitación | El proveedor se inscribe; el backend verifica en AFIP y firma una autorización; recibe su credencial (NFT intransferible) y su identidad anónima entra al grupo de Semaphore. Empleados e inspectores los da de alta un admin. | `CredencialNFT` + backend |
-| 1. Publicación | Un empleado publica la licitación (NFT ERC-721 con tokenURI a IPFS: pliego, descripción, etapas). | `Licitaciones` |
-| 2. Ofertas | El proveedor cifra monto, plazo y desglose con timelock (drand) y prueba con Semaphore que está habilitado. La oferta la manda el relayer: ninguna wallet identificable aparece. El nullifier impide ofertar dos veces. | dApp + relayer |
-| 3. Apertura | Al vencer el plazo cualquiera descifra y publica los montos; el contrato verifica el compromiso. Lo hace solo el bot del backend o cualquier ciudadano desde la dApp. | `abrirOferta` |
-| 4. Adjudicación | Un empleado del organismo elige una oferta por número y publica su dictamen en IPFS (o la declara desierta). | `adjudicar` |
-| 5. Cierre | Ganador y perdedores revelan desde su wallet real qué oferta era suya. | `revelarAutoria` |
-| 6. Ejecución | Un empleado asigna inspectores, que aprueban u observan cada etapa en orden hasta finalizar la obra. | `registrarEvaluacion` |
+| 1. Publicación | Un empleado publica la licitación (NFT ERC-721 con tokenURI a IPFS) con dos fechas: **cierre de ofertas** y **fecha límite de adjudicación**. | `crearLicitacion` |
+| 2. Ofertas | El proveedor prueba con Semaphore que está habilitado y manda dos cifrados con timelock (drand): el contenido de la oferta (se puede abrir desde el cierre) y su identidad (desde la fecha límite). La oferta la manda el relayer. El nullifier impide ofertar dos veces. | dApp + relayer |
+| 3. Apertura de sobres | Después del cierre, un empleado del organismo abre **todos los sobres juntos**, en una sola transacción, cuando va a evaluar. El ofertante no puede abrir nada; los sobres que no se pueden descifrar quedan descartados. Cualquiera puede verificar la apertura. | `abrirSobres` |
+| 4. Adjudicación | El empleado elige una oferta por número y publica su dictamen, antes de la fecha límite (después solo puede declararla desierta). | `adjudicar` |
+| 5. Identidades | En la fecha límite drand libera la segunda clave y las identidades de todas las ofertas se revelan solas (las publica el bot del backend o cualquiera desde la dApp). El ganador puede revelarse antes si quiere arrancar la obra. | `revelarIdentidades` |
+| 6. Ejecución | El organismo deposita el monto adjudicado en el contrato (escrow, en ETH: 1 peso = 1 gwei). Un inspector **del mismo organismo** aprueba las etapas en orden y cada aprobación le paga sola al contratista lo que cotizó para esa etapa. | `depositarFondos`, `registrarEvaluacion` |
 
 ## Estructura
 
@@ -25,7 +25,7 @@ civicchain/
 │   ├── scripts/     deploy, seed y utilidades
 │   └── tasks/       tasks de consola (credenciales)
 ├── backend/     Node 22, sin frameworks
-│   └── src/         verificador AFIP + firma EIP-712, base SQLite, IPFS local, relayer, bot de apertura
+│   └── src/         verificador AFIP + firma EIP-712, base SQLite, IPFS local, relayer, bot de identidades
 └── frontend/    dApp (Vite + ethers v6 + Semaphore + tlock)
     └── src/
         ├── shared/      reglas del protocolo compartidas con backend y tests (hashes, EIP-712)
@@ -69,6 +69,7 @@ nodo, MetaMask → Configuración → Avanzado → **Borrar datos de actividad**
 | #0 | Admin (deployer). Las wallets del equipo (`contracts/config/admins.ts`) también son admins y reciben 100 ETH |
 | #1 | Ana Pérez, empleada de la Municipalidad de Quilmes (publicó las licitaciones de ejemplo) |
 | #2 | Luis Gómez, inspector de la Municipalidad de Berazategui |
+| #17 | Laura Benítez, inspectora de Quilmes (la que puede controlar las obras de Ana) |
 | #3 | Proveedor: Construcciones del Sur S.A. (inscripción aprobada sola) |
 | #4 | Carlos Díaz, empleado de Avellaneda, vence a los 5 minutos |
 | #5 | Marta Ruiz, de baja en el padrón, credencial revocada |
@@ -81,8 +82,8 @@ nodo, MetaMask → Configuración → Avanzado → **Borrar datos de actividad**
 | #13 en adelante | Sin credencial (para probar una inscripción nueva o un alta manual) |
 | #18 / #19 | Verificador y relayer del backend (no usar) |
 
-Licitaciones de ejemplo: una cierra 15 minutos después del seed (para mostrar ofertas y apertura en clase) y otra
-en una semana.
+Licitaciones de ejemplo: una cierra 15 minutos después del seed y tiene fecha límite de adjudicación a los 35
+(para mostrar todo el flujo en una clase); la otra cierra en una semana.
 
 ## Credenciales
 
@@ -140,7 +141,7 @@ npx hardhat credencial estado  --wallet 0x... --network localhost
 
 El acceso de admin se prueba firmando un mensaje con la wallet (se verifica `ADMIN_ROLE` en el contrato).
 Variables de entorno: `RPC_URL`, `VERIFICADOR_PRIVATE_KEY`, `RELAYER_PRIVATE_KEY`, `PORT`, `ORIGEN_DAPP`,
-`DB_PATH`, `IPFS_DIR`, `INTERVALO_APERTURA_MS` (ver `backend/src/config.js`). En local no hace falta ninguna.
+`DB_PATH`, `IPFS_DIR`, `INTERVALO_BOT_MS` (ver `backend/src/config.js`). En local no hace falta ninguna.
 
 ## dApp
 
@@ -148,9 +149,10 @@ Variables de entorno: `RPC_URL`, `VERIFICADOR_PRIVATE_KEY`, `RELAYER_PRIVATE_KEY
 |---|---|
 | Cualquiera (sin wallet) | Inicio con estadísticas reales, licitaciones, detalle con ofertas, decisiones, etapas y transacciones |
 | Sin credencial | Inscripción de proveedor (con el motivo del último rechazo, si hubo) |
-| Proveedor | Ofertar de forma anónima; después de adjudicar, "Buscar mi oferta y revelar" |
-| Empleado | Publicar licitación; adjudicar o declarar desierta las de su organismo; asignar inspectores |
-| Inspector asignado | Aprobar u observar la siguiente etapa, con informe en IPFS |
+| Cualquiera con wallet | "Verificar apertura" (descifra los sobres y compara) y "Revelar identidades" después de la fecha límite |
+| Proveedor | Ofertar de forma anónima; si ganó, revelarse antes de la fecha límite (opcional) |
+| Empleado | Publicar licitación; abrir los sobres, adjudicar o declarar desierta, depositar los fondos y asignar inspectores (solo su organismo) |
+| Inspector asignado | Aprobar u observar la siguiente etapa, con informe en IPFS; al aprobar se le paga al contratista |
 | Admin | Alta de funcionarios, decisiones del verificador, auditoría contra el padrón, credenciales |
 
 La identidad anónima del proveedor no se guarda en ningún lado: sale de firmar siempre el mismo mensaje con la
@@ -162,8 +164,8 @@ Conexión por **QR** (WalletConnect): definir `VITE_WALLETCONNECT_PROJECT_ID` (g
 ## Tests
 
 ```bash
-cd contracts && npm test   # 90 tests: credenciales, licitaciones (con pruebas ZK reales), AFIP y padrón
-cd backend && npm test     # verificador, firma, base, IPFS, bot de apertura y API HTTP
+cd contracts && npm test   # 97 tests: credenciales, licitaciones (con pruebas ZK reales), AFIP y padrón
+cd backend && npm test     # verificador, firma, base, IPFS, bot de identidades y API HTTP
 ```
 
 Si no se puede descargar el compilador (sin internet): `npm i -D solc@0.8.28` y
@@ -183,19 +185,22 @@ Después: el backend con `RPC_URL`, `VERIFICADOR_PRIVATE_KEY` (la de `VERIFICADO
 
 ## Dudas y limitaciones (marcadas con `DUDA` / `LIMITACIÓN` en el código)
 
-- **Apertura selectiva** (`Licitaciones.abrirOferta`): el contrato verifica el compromiso, no que el cifrado sea
-  correcto. Una empresa podría cifrar basura y abrir su oferta ella misma solo si le conviene. Mitigaciones: una
-  garantía que se pierde si la oferta no se abre, o una prueba ZK de cifrado correcto.
-- **Revelación obligatoria** (`revelarAutoria`): no hay forma de forzar al ganador a revelar. Falta definir el plazo y
-  qué pasa si no lo hace (¿se readjudica a la segunda?).
-- **Préstamo de autoría**: dos proveedores habilitados podrían ponerse de acuerdo para que uno revele la oferta del
-  otro. Evitarlo sin romper el anonimato requiere otra prueba ZK al revelar.
-- **Raíces viejas de Semaphore** (`DURACION_RAIZ = 1 hora`): un proveedor revocado puede seguir probando durante ese
-  lapso. ¿Alcanza o conviene bajarla?
-- **Inspectores**: hoy se puede asignar cualquier inspector vigente. ¿Tiene que ser del mismo organismo?
-- **Ventana de apertura mínima**: 5 minutos, para poder hacer la demo. En producción, días.
+- **Montos después del cierre**: con drand, desde el cierre cualquiera podría descifrar los sobres por su cuenta
+  (fuera de la dApp). Lo que se garantiza es que nadie los ve **antes** del cierre y que la publicación oficial es
+  una sola, de todos juntos, por el organismo. Si se quisiera que nadie los vea hasta que el organismo decide,
+  habría que cambiar drand por un comité de custodios (por ejemplo 3 de 5) que libere la clave en ese momento.
+- **Descartes en la apertura**: el contrato no puede comprobar por sí mismo que un sobre descartado era
+  indescifrable. Queda a la vista con "Verificar apertura", pero no hay un mecanismo de impugnación.
+- **Ganador con identidad inválida**: si el ganador cifró basura en su identidad, no se puede saber quién es y no
+  hay contratista. Hoy el organismo tendría que relicitar.
+- **Préstamo de autoría**: dos proveedores habilitados podrían ponerse de acuerdo para atribuirse la oferta del otro.
+  Evitarlo sin romper el anonimato requiere otra prueba ZK al revelar.
+- **Plazos cortos para la demo**: mínimo 5 minutos entre cierre y fecha límite; en producción serían días o semanas.
+- **Raíces viejas de Semaphore**: 5 minutos por defecto; el admin lo cambia con `configurarDuracionRaiz` (con 0 un
+  proveedor revocado queda afuera en el acto, a costa de que una prueba en vuelo justo en un cambio de grupo falle).
+- **Escrow en ETH**: escala ficticia 1 peso = 1 gwei. En producción se pagaría con un token en pesos. Si la wallet
+  del contratista rechazara ETH (un contrato), no se podría registrar la evaluación; con wallets comunes no pasa.
 - **Inscripciones sin camino de excepción**: una empresa que AFIP todavía no lista queda rechazada.
-- **Pagos por hitos (escrow)**: siguen fuera de alcance; `registrarEvaluacion` es donde se liberaría cada pago.
 - **Producción**: base gestionada en lugar de SQLite, *pinning* real en IPFS (Pinata/Storacha), RPC propio para
   Sepolia, el relayer ve la IP de quien oferta, artefactos ZK servidos por nosotros en lugar del CDN de Semaphore,
   wallets que no firman de forma determinística (hardware/multisig).

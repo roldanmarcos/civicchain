@@ -22,17 +22,18 @@ import {
 const HERRAMIENTAS = {
   EMPLEADO: [
     ["Publicar licitaciones", "Una obra con su pliego, presupuesto, fecha de cierre y etapas.", "nueva-licitacion"],
-    ["Evaluar y adjudicar", "Ver las ofertas abiertas al cierre y adjudicar con un dictamen fundado.", "licitaciones"],
+    ["Abrir sobres y adjudicar", "Abrir todas las ofertas juntas después del cierre y adjudicar con un dictamen fundado, antes de la fecha límite.", "licitaciones"],
+    ["Depositar los fondos", "Dejar el monto adjudicado en el contrato: se paga solo, etapa por etapa.", "licitaciones"],
     ["Asignar inspectores", "Elegir quién controla cada etapa de la obra adjudicada.", "licitaciones"],
   ],
-  INSPECTOR: [["Registrar avances de obra", "Aprobar u observar cada etapa de las obras que tenés asignadas.", "licitaciones"]],
+  INSPECTOR: [["Registrar avances de obra", "Aprobar u observar cada etapa de las obras de tu organismo que tenés asignadas. Al aprobar, se le paga sola al contratista.", "licitaciones"]],
   PROVEEDOR: [
     [
       "Ofertar de forma anónima",
       "La prueba de conocimiento cero demuestra que estás habilitado sin revelar quién sos. El monto queda cifrado hasta el cierre.",
       "licitaciones",
     ],
-    ["Revelar tu autoría", "Después de la adjudicación, demostrás desde tu wallet cuál era tu oferta.", "licitaciones"],
+    ["Cobrar por etapa", "Tu identidad se revela sola en la fecha límite de adjudicación. Si ganás, cada etapa que aprueba el inspector se te paga automáticamente.", "licitaciones"],
   ],
 };
 

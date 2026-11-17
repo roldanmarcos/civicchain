@@ -11,7 +11,13 @@
     "type": "constructor"
   },
   {
-    "inputs": [],
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "ofertaId",
+        "type": "uint256"
+      }
+    ],
     "name": "AutoriaIncorrecta",
     "type": "error"
   },
@@ -21,7 +27,13 @@
     "type": "error"
   },
   {
-    "inputs": [],
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "ofertaId",
+        "type": "uint256"
+      }
+    ],
     "name": "CompromisoIncorrecto",
     "type": "error"
   },
@@ -31,7 +43,13 @@
     "type": "error"
   },
   {
-    "inputs": [],
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "ofertaId",
+        "type": "uint256"
+      }
+    ],
     "name": "DesgloseInvalido",
     "type": "error"
   },
@@ -166,6 +184,11 @@
   },
   {
     "inputs": [],
+    "name": "IdentidadesTodaviaOcultas",
+    "type": "error"
+  },
+  {
+    "inputs": [],
     "name": "InspectorYaAsignado",
     "type": "error"
   },
@@ -183,6 +206,17 @@
   {
     "inputs": [],
     "name": "MensajeIncorrecto",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "esperado",
+        "type": "uint256"
+      }
+    ],
+    "name": "MontoIncorrecto",
     "type": "error"
   },
   {
@@ -213,12 +247,17 @@
   },
   {
     "inputs": [],
-    "name": "OfertaYaAbierta",
+    "name": "OtroOrganismo",
     "type": "error"
   },
   {
     "inputs": [],
-    "name": "OtroOrganismo",
+    "name": "PagoFallido",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "PlazoDeAdjudicacionVencido",
     "type": "error"
   },
   {
@@ -233,12 +272,22 @@
   },
   {
     "inputs": [],
+    "name": "ReentrancyGuardReentrantCall",
+    "type": "error"
+  },
+  {
+    "inputs": [],
     "name": "ScopeIncorrecto",
     "type": "error"
   },
   {
     "inputs": [],
     "name": "SinContratista",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "SinFondos",
     "type": "error"
   },
   {
@@ -254,12 +303,22 @@
   },
   {
     "inputs": [],
+    "name": "SobresIncompletos",
+    "type": "error"
+  },
+  {
+    "inputs": [],
     "name": "SuperaPresupuesto",
     "type": "error"
   },
   {
     "inputs": [],
     "name": "TextoInvalido",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "YaFinanciada",
     "type": "error"
   },
   {
@@ -392,6 +451,31 @@
       {
         "indexed": true,
         "internalType": "address",
+        "name": "empleado",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "monto",
+        "type": "uint256"
+      }
+    ],
+    "name": "FondosDepositados",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "licitacionId",
+        "type": "uint256"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
         "name": "inspector",
         "type": "address"
       }
@@ -503,7 +587,7 @@
       {
         "indexed": false,
         "internalType": "uint64",
-        "name": "finApertura",
+        "name": "limiteAdjudicacion",
         "type": "uint64"
       }
     ],
@@ -555,6 +639,25 @@
         "internalType": "uint256",
         "name": "ofertaId",
         "type": "uint256"
+      }
+    ],
+    "name": "OfertaDescartada",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "licitacionId",
+        "type": "uint256"
+      },
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "ofertaId",
+        "type": "uint256"
       },
       {
         "indexed": false,
@@ -566,6 +669,12 @@
         "indexed": false,
         "internalType": "bytes",
         "name": "cifrado",
+        "type": "bytes"
+      },
+      {
+        "indexed": false,
+        "internalType": "bytes",
+        "name": "cifradoIdentidad",
         "type": "bytes"
       },
       {
@@ -588,6 +697,68 @@
       }
     ],
     "name": "OfertaRecibida",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "licitacionId",
+        "type": "uint256"
+      },
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "etapa",
+        "type": "uint256"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "contratista",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "monto",
+        "type": "uint256"
+      }
+    ],
+    "name": "PagoRealizado",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "licitacionId",
+        "type": "uint256"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "empleado",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "validas",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "descartadas",
+        "type": "uint256"
+      }
+    ],
+    "name": "SobresAbiertos",
     "type": "event"
   },
   {
@@ -669,12 +840,25 @@
   },
   {
     "inputs": [],
-    "name": "MIN_APERTURA",
+    "name": "MIN_EVALUACION",
     "outputs": [
       {
         "internalType": "uint64",
         "name": "",
         "type": "uint64"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "WEI_POR_PESO",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
       }
     ],
     "stateMutability": "view",
@@ -688,32 +872,39 @@
         "type": "uint256"
       },
       {
-        "internalType": "uint256",
-        "name": "ofertaId",
-        "type": "uint256"
-      },
-      {
-        "internalType": "uint256",
-        "name": "monto",
-        "type": "uint256"
-      },
-      {
-        "internalType": "uint32",
-        "name": "plazoDias",
-        "type": "uint32"
-      },
-      {
-        "internalType": "uint256[]",
-        "name": "desglose",
-        "type": "uint256[]"
-      },
-      {
-        "internalType": "bytes32",
-        "name": "sal",
-        "type": "bytes32"
+        "components": [
+          {
+            "internalType": "bool",
+            "name": "valido",
+            "type": "bool"
+          },
+          {
+            "internalType": "uint256",
+            "name": "monto",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint32",
+            "name": "plazoDias",
+            "type": "uint32"
+          },
+          {
+            "internalType": "uint256[]",
+            "name": "desglose",
+            "type": "uint256[]"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "sal",
+            "type": "bytes32"
+          }
+        ],
+        "internalType": "struct Licitaciones.Sobre[]",
+        "name": "sobres",
+        "type": "tuple[]"
       }
     ],
-    "name": "abrirOferta",
+    "name": "abrirSobres",
     "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"
@@ -839,7 +1030,7 @@
       },
       {
         "internalType": "uint64",
-        "name": "duracionApertura",
+        "name": "limiteAdjudicacion",
         "type": "uint64"
       },
       {
@@ -888,6 +1079,19 @@
     "name": "declararDesierta",
     "outputs": [],
     "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "licitacionId",
+        "type": "uint256"
+      }
+    ],
+    "name": "depositarFondos",
+    "outputs": [],
+    "stateMutability": "payable",
     "type": "function"
   },
   {
@@ -1042,7 +1246,7 @@
           },
           {
             "internalType": "uint64",
-            "name": "finApertura",
+            "name": "limiteAdjudicacion",
             "type": "uint64"
           },
           {
@@ -1071,6 +1275,11 @@
             "type": "uint16[]"
           },
           {
+            "internalType": "bool",
+            "name": "sobresAbiertos",
+            "type": "bool"
+          },
+          {
             "internalType": "uint256",
             "name": "ofertaGanadora",
             "type": "uint256"
@@ -1094,6 +1303,16 @@
             "internalType": "uint8",
             "name": "etapasAprobadas",
             "type": "uint8"
+          },
+          {
+            "internalType": "uint256",
+            "name": "fondos",
+            "type": "uint256"
+          },
+          {
+            "internalType": "bool",
+            "name": "financiada",
+            "type": "bool"
           }
         ],
         "internalType": "struct Licitaciones.Licitacion",
@@ -1114,6 +1333,11 @@
       {
         "internalType": "bytes32",
         "name": "cifradoHash",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "cifradoIdentidadHash",
         "type": "bytes32"
       },
       {
@@ -1141,6 +1365,25 @@
       }
     ],
     "stateMutability": "pure",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "licitacionId",
+        "type": "uint256"
+      }
+    ],
+    "name": "montoAdjudicadoEnWei",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
     "type": "function"
   },
   {
@@ -1209,6 +1452,11 @@
           },
           {
             "internalType": "bytes32",
+            "name": "cifradoIdentidadHash",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "bytes32",
             "name": "compromisoMonto",
             "type": "bytes32"
           },
@@ -1230,6 +1478,11 @@
           {
             "internalType": "bool",
             "name": "abierta",
+            "type": "bool"
+          },
+          {
+            "internalType": "bool",
+            "name": "descartada",
             "type": "bool"
           },
           {
@@ -1264,24 +1517,36 @@
         "type": "uint256"
       },
       {
-        "internalType": "bytes",
-        "name": "cifrado",
-        "type": "bytes"
-      },
-      {
-        "internalType": "bytes32",
-        "name": "compromisoMonto",
-        "type": "bytes32"
-      },
-      {
-        "internalType": "bytes32",
-        "name": "compromisoAutoria",
-        "type": "bytes32"
-      },
-      {
-        "internalType": "string",
-        "name": "propuestaCID",
-        "type": "string"
+        "components": [
+          {
+            "internalType": "bytes",
+            "name": "cifrado",
+            "type": "bytes"
+          },
+          {
+            "internalType": "bytes",
+            "name": "cifradoIdentidad",
+            "type": "bytes"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "compromisoMonto",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "compromisoAutoria",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "string",
+            "name": "propuestaCID",
+            "type": "string"
+          }
+        ],
+        "internalType": "struct Licitaciones.OfertaNueva",
+        "name": "o",
+        "type": "tuple"
       },
       {
         "components": [
@@ -1398,6 +1663,41 @@
       }
     ],
     "name": "revelarAutoria",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "licitacionId",
+        "type": "uint256"
+      },
+      {
+        "components": [
+          {
+            "internalType": "uint256",
+            "name": "ofertaId",
+            "type": "uint256"
+          },
+          {
+            "internalType": "address",
+            "name": "wallet",
+            "type": "address"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "sal",
+            "type": "bytes32"
+          }
+        ],
+        "internalType": "struct Licitaciones.Identidad[]",
+        "name": "identidades",
+        "type": "tuple[]"
+      }
+    ],
+    "name": "revelarIdentidades",
     "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"

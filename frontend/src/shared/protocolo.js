@@ -12,7 +12,7 @@
 export const ROLES = ["PROVEEDOR", "EMPLEADO", "INSPECTOR"];
 export const ESTADOS_LICITACION = [
   "RECIBIENDO_OFERTAS",
-  "APERTURA",
+  "APERTURA", // esperando la apertura de sobres
   "EVALUACION",
   "ADJUDICADA",
   "EN_EJECUCION",
@@ -63,7 +63,21 @@ export function leerOfertaSecreta(texto) {
   return { monto: BigInt(o.monto), plazoDias: Number(o.plazoDias), desglose: o.desglose.map(BigInt), sal: o.sal };
 }
 
-/** Licitación de drand quicknet (la que usa tlock-js por defecto): una ronda cada 3 segundos. */
+/** Identidad secreta de una oferta: se cifra para la fecha límite de adjudicación. */
+export function serializarIdentidadSecreta({ wallet, sal }) {
+  return JSON.stringify({ v: 1, wallet, sal });
+}
+
+export function leerIdentidadSecreta(texto) {
+  const o = JSON.parse(texto);
+  if (o?.v !== 1 || typeof o.wallet !== "string" || typeof o.sal !== "string") throw new Error("Formato de identidad desconocido");
+  return { wallet: o.wallet, sal: o.sal };
+}
+
+/** Escala ficticia del escrow: 1 peso = 1 gwei (igual que Licitaciones.WEI_POR_PESO). */
+export const WEI_POR_PESO = 1_000_000_000n;
+
+/** Red de drand quicknet (la que usa tlock-js por defecto): una ronda cada 3 segundos. */
 export const DRAND_QUICKNET = { genesis: 1692803367, periodo: 3 };
 
 /** Primera ronda de drand publicada en el momento `timestamp` (segundos) o después. */
@@ -110,12 +124,12 @@ export function crearProtocolo(ethers) {
       keccak256(abi.encode(["uint256", "address", "bytes32"], [licitacionId, wallet, sal])),
 
     /** Igual que Licitaciones.mensajeOferta. */
-    mensajeOferta: (licitacionId, cifradoHash, compromisoMonto, compromisoAutoria, propuestaCID) =>
+    mensajeOferta: (licitacionId, cifradoHash, cifradoIdentidadHash, compromisoMonto, compromisoAutoria, propuestaCID) =>
       BigInt(
         keccak256(
           abi.encode(
-            ["uint256", "bytes32", "bytes32", "bytes32", "string"],
-            [licitacionId, cifradoHash, compromisoMonto, compromisoAutoria, propuestaCID],
+            ["uint256", "bytes32", "bytes32", "bytes32", "bytes32", "string"],
+            [licitacionId, cifradoHash, cifradoIdentidadHash, compromisoMonto, compromisoAutoria, propuestaCID],
           ),
         ),
       ),

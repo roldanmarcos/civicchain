@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import * as ethers from "ethers";
 import { crearClienteAfip } from "../src/afip/afip.js";
-import { crearBotApertura } from "../src/apertura.js";
+import { crearBotIdentidades } from "../src/identidades.js";
 import { abrirBase } from "../src/db.js";
 import { crearServicioFuncionarios, mensajeAccesoAdmin } from "../src/funcionarios.js";
 import { crearServicioInscripciones } from "../src/inscripciones.js";
@@ -149,36 +149,45 @@ describe("rondas de drand", () => {
   });
 });
 
-describe("bot de apertura", () => {
-  it("abre las ofertas en ventana de apertura y descarta las que no se pueden descifrar", async () => {
+describe("bot de identidades", () => {
+  it("después de la fecha límite revela juntas las identidades que puede descifrar", async () => {
     const llamadas = [];
-    const ahora = 1_000;
+    const autores = {};
     const licitaciones = {
       totalLicitaciones: async () => 1n,
-      licitacion: async () => ({ desierta: false, ofertaGanadora: 0n, cierreOfertas: 900n, finApertura: 2000n }),
-      cantidadOfertas: async () => 2n,
-      oferta: async () => ({ abierta: false }),
+      licitacion: async () => ({ limiteAdjudicacion: 900n }),
+      cantidadOfertas: async () => 3n,
+      oferta: async (_id, o) => ({ autor: autores[o] ?? ethers.ZeroAddress }),
       filters: { OfertaRecibida: (l, o) => ({ l, o }) },
-      queryFilter: async ({ o }) => [{ args: { cifrado: ethers.toUtf8Bytes(o === 1 ? "bueno" : "malo") } }],
-      abrirOferta: async (...args) => {
-        llamadas.push(args);
+      queryFilter: async ({ o }) => [{ args: { cifradoIdentidad: ethers.toUtf8Bytes(o === 2 ? "basura" : `id-${o}`) } }],
+      revelarIdentidades: async (id, lista) => {
+        llamadas.push(lista);
+        for (const p of lista) autores[p.ofertaId] = p.wallet;
         return { wait: async () => {} };
       },
     };
-    const bot = crearBotApertura({
+    const wallet = (n) => `0x${String(n).repeat(40)}`;
+    let ahora = 800;
+    const bot = crearBotIdentidades({
       cadena: { conectar: async () => ({ licitaciones, desdeBloque: 0 }) },
       ahora: () => ahora,
       log: {},
       descifrar: async (texto) => {
-        if (texto !== "bueno") throw new Error("formato inválido");
-        return { monto: 10n, plazoDias: 30, desglose: [10n], sal: ethers.ZeroHash };
+        if (!texto.startsWith("id-")) throw new Error("formato inválido");
+        return { wallet: wallet(texto.slice(3)), sal: ethers.ZeroHash };
       },
     });
-    assert.equal(await bot.revisar(), 1);
-    assert.deepEqual(llamadas[0], [1, 1, 10n, 30, [10n], ethers.ZeroHash]);
-    // La segunda quedó descartada: no se reintenta
-    assert.equal(await bot.revisar(), 1);
-    assert.equal(llamadas.length, 2); // la 1 se vuelve a intentar porque la oferta falsa sigue "sin abrir"
+    // Antes de la fecha límite no hace nada
+    assert.equal(await bot.revisar(), 0);
+    ahora = 1000;
+    assert.equal(await bot.revisar(), 2);
+    assert.deepEqual(
+      llamadas[0].map((p) => p.ofertaId),
+      [1, 3],
+    );
+    // La que no se pudo descifrar queda descartada y las reveladas no se repiten
+    assert.equal(await bot.revisar(), 0);
+    assert.equal(llamadas.length, 1);
   });
 });
 

@@ -1,7 +1,7 @@
 // Conexión a la blockchain: proveedor, contratos y las dos cuentas del backend.
 //
 // - Verificador: solo firma autorizaciones (EIP-712). No manda transacciones ni necesita ETH.
-// - Relayer: manda las ofertas anónimas y las aperturas, y paga el gas. Necesita ETH.
+// - Relayer: manda las ofertas anónimas y las revelaciones de identidad, y paga el gas. Necesita ETH.
 //
 // La conexión es perezosa: el backend arranca aunque el nodo todavía no esté levantado, y toma solo
 // las direcciones nuevas si se vuelven a desplegar los contratos.

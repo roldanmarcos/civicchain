@@ -31,8 +31,8 @@ export const config = {
   vigenciaProveedorDias: Number(process.env.VIGENCIA_PROVEEDOR_DIAS ?? 365),
   /** Cuánto tiempo tiene el proveedor para usar la autorización firmada. */
   validezFirmaSegundos: Number(process.env.VALIDEZ_FIRMA_SEGUNDOS ?? 3600),
-  /** Cada cuánto el bot revisa si hay ofertas para abrir. 0 lo desactiva. */
-  intervaloAperturaMs: Number(process.env.INTERVALO_APERTURA_MS ?? 20_000),
+  /** Cada cuánto el bot revisa si hay identidades para revelar. 0 lo desactiva. */
+  intervaloBotMs: Number(process.env.INTERVALO_BOT_MS ?? 20_000),
   /** Tamaño máximo de un archivo subido a IPFS. */
   maxArchivoBytes: Number(process.env.MAX_ARCHIVO_BYTES ?? 10 * 1024 * 1024),
 };

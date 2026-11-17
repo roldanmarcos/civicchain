@@ -26,10 +26,11 @@ export function renderNuevaLicitacion() {
     return render(contenedor, html`<div class="empty-state"><span>✎</span><strong>Solo empleados estatales con credencial vigente pueden publicar.</strong></div>`);
   }
 
-  // Por defecto: cierre en 7 días, a las 12:00.
+  // Por defecto: cierre en 7 días y fecha límite de adjudicación una semana después, a las 12:00.
+  const aLocal = (d) => new Date(d.getTime() - d.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
   const cierre = new Date(Date.now() + 7 * 86400_000);
   cierre.setHours(12, 0, 0, 0);
-  const local = new Date(cierre.getTime() - cierre.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
+  const limite = new Date(cierre.getTime() + 7 * 86400_000);
 
   render(
     contenedor,
@@ -41,10 +42,10 @@ export function renderNuevaLicitacion() {
         <div class="form-field"><label for="lic-ubicacion">Ubicación</label><input id="lic-ubicacion" name="ubicacion" placeholder="Localidad, provincia" required></div>
         <div class="form-field"><label for="lic-presupuesto">Presupuesto oficial (pesos)</label><input id="lic-presupuesto" name="presupuesto" inputmode="numeric" required>
           <small class="campo-ayuda" id="lic-presupuesto-ayuda">Es el máximo: no se pueden adjudicar ofertas que lo superen.</small></div>
-        <div class="form-field"><label for="lic-cierre">Cierre de ofertas</label><input id="lic-cierre" name="cierre" type="datetime-local" value="${local}" required>
-          <small class="campo-ayuda">También fija la ronda de drand: antes de esta fecha nadie puede descifrar los montos.</small></div>
-        <div class="form-field"><label for="lic-apertura">Ventana de apertura (minutos)</label><input id="lic-apertura" name="apertura" type="number" min="5" value="60" required>
-          <small class="campo-ayuda">Tiempo para publicar los montos descifrados antes de evaluar (mínimo 5).</small></div>
+        <div class="form-field"><label for="lic-cierre">Cierre de ofertas</label><input id="lic-cierre" name="cierre" type="datetime-local" value="${aLocal(cierre)}" required>
+          <small class="campo-ayuda">Antes de esta fecha nadie puede descifrar los montos (drand). Después, tu organismo abre todos los sobres juntos.</small></div>
+        <div class="form-field"><label for="lic-limite">Fecha límite de adjudicación</label><input id="lic-limite" name="limite" type="datetime-local" value="${aLocal(limite)}" required>
+          <small class="campo-ayuda">Hay que adjudicar antes. En ese momento se revelan solas las identidades de los oferentes. Al menos 5 minutos después del cierre.</small></div>
         <div class="form-field form-field-ancho"><label for="lic-pliego">Pliego de condiciones (PDF)</label><input id="lic-pliego" name="pliego" type="file" accept="application/pdf" required></div>
       </div>
 
@@ -116,13 +117,14 @@ function conectar() {
     const error = (texto) => render(resultado, html`<div class="alerta alerta-error"><p>${texto}</p></div>`);
     const presupuesto = valor("presupuesto").replace(/\D/g, "");
     const cierre = Math.floor(new Date(valor("cierre")).getTime() / 1000);
+    const limite = Math.floor(new Date(valor("limite")).getTime() / 1000);
     const pliego = /** @type {HTMLInputElement} */ (form.elements.namedItem("pliego")).files?.[0];
     const suma = etapas.reduce((s, e) => s + Number(e.porcentaje || 0), 0);
 
     if (!valor("titulo") || !valor("descripcion") || !valor("ubicacion")) return error("Completá título, descripción y ubicación.");
     if (!presupuesto || BigInt(presupuesto) === 0n) return error("El presupuesto tiene que ser mayor a cero.");
     if (!cierre || cierre <= Date.now() / 1000 + 60) return error("El cierre tiene que ser al menos dentro de un minuto.");
-    if (Number(valor("apertura")) < 5) return error("La ventana de apertura tiene que ser de al menos 5 minutos.");
+    if (!limite || limite < cierre + 5 * 60) return error("La fecha límite de adjudicación tiene que ser al menos 5 minutos después del cierre.");
     if (!pliego) return error("Adjuntá el pliego.");
     if (etapas.some((e) => !e.nombre.trim() || !(e.porcentaje > 0))) return error("Cada etapa necesita nombre y un porcentaje mayor a 0.");
     if (Math.abs(suma - 100) > 0.001) return error("Los porcentajes de las etapas tienen que sumar 100%.");
@@ -137,7 +139,7 @@ function conectar() {
           ubicacion: valor("ubicacion"),
           presupuesto: BigInt(presupuesto),
           cierre,
-          aperturaMinutos: Number(valor("apertura")),
+          limite,
           etapas: etapas.map((e) => ({ nombre: e.nombre.trim(), porcentaje: e.porcentaje })),
           pliego,
         },
