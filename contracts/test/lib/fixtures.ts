@@ -102,6 +102,6 @@ export async function probar(id: Identity, grupo: Group, mensaje: bigint, scope:
     nullifier: BigInt(p.nullifier),
     message: BigInt(p.message),
     scope: BigInt(p.scope),
-    points: p.points.map((x) => BigInt(x)),
+    points: p.points.map((x: string | bigint) => BigInt(x)),
   };
 }

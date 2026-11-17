@@ -1,0 +1,19 @@
+{
+  "name": "civicchain-backend",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Verificador (AFIP + firma EIP-712), base de datos fuera de la cadena, IPFS local, relayer y bot de apertura",
+  "scripts": {
+    "start": "node --disable-warning=ExperimentalWarning src/index.js",
+    "test": "node --disable-warning=ExperimentalWarning --test \"test/**/*.test.js\""
+  },
+  "engines": {
+    "node": ">=22.13"
+  },
+  "dependencies": {
+    "ethers": "^6.17.0",
+    "multiformats": "^14.0.5",
+    "tlock-js": "^0.9.0"
+  }
+}

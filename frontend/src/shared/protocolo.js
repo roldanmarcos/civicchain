@@ -47,6 +47,32 @@ export const MENSAJE_IDENTIDAD =
 export const mensajeAutoria = (licitacionId) =>
   `CivicChain\n\nSal de autoría para la licitación #${licitacionId} (v1).\n\nNo compartas esta firma con nadie.`;
 
+/**
+ * Contenido secreto de una oferta: es lo que se cifra con timelock y lo que se publica en la apertura.
+ * Los montos van como texto para no perder precisión.
+ * @param {{ monto: bigint, plazoDias: number, desglose: bigint[], sal: string }} oferta
+ */
+export function serializarOfertaSecreta({ monto, plazoDias, desglose, sal }) {
+  return JSON.stringify({ v: 1, monto: String(monto), plazoDias, desglose: desglose.map(String), sal });
+}
+
+/** Inversa de serializarOfertaSecreta. Lanza un error si el contenido no tiene el formato esperado. */
+export function leerOfertaSecreta(texto) {
+  const o = JSON.parse(texto);
+  if (o?.v !== 1 || !Array.isArray(o.desglose) || typeof o.sal !== "string") throw new Error("Formato de oferta desconocido");
+  return { monto: BigInt(o.monto), plazoDias: Number(o.plazoDias), desglose: o.desglose.map(BigInt), sal: o.sal };
+}
+
+/** Licitación de drand quicknet (la que usa tlock-js por defecto): una ronda cada 3 segundos. */
+export const DRAND_QUICKNET = { genesis: 1692803367, periodo: 3 };
+
+/** Primera ronda de drand publicada en el momento `timestamp` (segundos) o después. */
+export function rondaDrand(timestamp) {
+  const { genesis, periodo } = DRAND_QUICKNET;
+  if (timestamp <= genesis) return 1;
+  return Math.ceil((timestamp - genesis) / periodo) + 1;
+}
+
 /** JSON con las claves ordenadas, para que los mismos datos den siempre el mismo hash. */
 export function jsonCanonico(valor) {
   if (Array.isArray(valor)) return `[${valor.map(jsonCanonico).join(",")}]`;

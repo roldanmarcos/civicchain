@@ -4,6 +4,7 @@ import {
   comoTask,
   conectarCredenciales,
   formatearFecha,
+  llamarBackend,
   validarOrganismo,
   venceEnDias,
 } from "../scripts/lib/credenciales.js";
@@ -36,7 +37,20 @@ export default comoTask<Args>(async (args, hre) => {
   console.log(`  Vence:      ${formatearFecha(validaHasta)} (${args.dias} días)`);
   console.log(`  Firma:      ${firmante.address}`);
 
-  const tx = await credenciales.emitirFuncionario(wallet, rol, empleado.organismoId, empleado.nombre, validaHasta);
+  // Los datos completos (DNI, cargo, resolución) quedan en la base del backend; en la cadena, su hash.
+  let datosHash = ethers.ZeroHash;
+  try {
+    ({ datosHash } = await llamarBackend<{ datosHash: string }>(
+      "/api/funcionarios",
+      { wallet, rol: empleado.funcion, organismoId: empleado.organismoId, nombre: empleado.nombre, dni: empleado.dni, area: empleado.area, cargo: empleado.cargo, resolucion: empleado.resolucion },
+      firmante,
+    ));
+    console.log(`  Datos:      guardados en el backend (hash ${datosHash})`);
+  } catch (error) {
+    console.log(`  Datos:      no se guardaron en el backend (${(error as Error).message}); se emite sin hash`);
+  }
+
+  const tx = await credenciales.emitirFuncionario(wallet, rol, empleado.organismoId, empleado.nombre, validaHasta, datosHash);
   await tx.wait();
   const [tokenId] = await credenciales.credencialDe(wallet);
   console.log(`Credencial #${tokenId} emitida. Transacción: ${tx.hash}`);
