@@ -86,5 +86,16 @@
     "resolucion": "Res. 0620/2026",
     "estado": "ACTIVO",
     "wallet": null
+  },
+  {
+    "dni": "32100200",
+    "nombre": "Laura Benítez",
+    "funcion": "INSPECTOR",
+    "organismoId": 1,
+    "area": "Secretaría de Obras Públicas",
+    "cargo": "Inspectora de obra",
+    "resolucion": "Res. 0412/2026",
+    "estado": "ACTIVO",
+    "wallet": "0xbDA5747bFD65F08deb54cb465eB87D40e51B197E"
   }
 ]

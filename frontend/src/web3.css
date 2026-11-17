@@ -414,6 +414,170 @@ body:not([data-paginas~="licitaciones"]) [data-page="licitaciones"],
 body:not([data-paginas~="licitaciones"]) .requiere-licitaciones,
 body:not([data-paginas~="registro"]) [data-page="registro"],
 body:not([data-paginas~="mi-credencial"]) [data-page="mi-credencial"],
+body:not([data-paginas~="nueva-licitacion"]) [data-page="nueva-licitacion"],
 body:not([data-paginas~="admin"]) [data-page="admin"] {
   display: none !important;
+}
+
+/* ---------------------------------------------------------------------------
+   Licitaciones: detalle, formularios y etapas
+   --------------------------------------------------------------------------- */
+
+.form-field textarea {
+  border: 1px solid #e2e8e2;
+  border-radius: 6px;
+  padding: 9px 11px;
+  font: 11px "DM Sans", sans-serif;
+  outline-color: #8ab99a;
+  resize: vertical;
+}
+
+.form-field-ancho {
+  grid-column: 1 / -1;
+}
+
+.form-field input[type="file"] {
+  height: auto;
+  padding: 8px;
+}
+
+a.detail-document {
+  text-decoration: none;
+  color: inherit;
+}
+
+#panel-accion {
+  display: grid;
+  gap: 14px;
+  margin-top: 22px;
+}
+
+#panel-accion:empty {
+  display: none;
+}
+
+.detail-main .phase-list {
+  grid-template-columns: repeat(7, 1fr);
+}
+
+.fila-ganadora td {
+  background: #f1f8f3;
+  font-weight: 600;
+}
+
+.etapas {
+  list-style: none;
+  counter-reset: etapa;
+  padding: 0;
+  margin: 0 0 12px;
+  display: grid;
+  gap: 8px;
+}
+
+.etapas li {
+  counter-increment: etapa;
+  background: #fff;
+  border: 1px solid #e7ece7;
+  border-radius: 8px;
+  padding: 11px 13px 11px 40px;
+  position: relative;
+  font-size: 11px;
+}
+
+.etapas li:before {
+  content: counter(etapa);
+  position: absolute;
+  left: 12px;
+  top: 10px;
+  width: 19px;
+  height: 19px;
+  border-radius: 50%;
+  background: #edf0ec;
+  color: #78837c;
+  display: grid;
+  place-items: center;
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.etapas li.etapa-aprobada:before {
+  background: #62a378;
+  color: #fff;
+  content: "✓";
+}
+
+.etapas li.etapa-actual {
+  border-color: #b7d2bf;
+}
+
+.evaluacion {
+  margin-top: 6px;
+  font-size: 10px;
+  color: #4d6a57;
+}
+
+.evaluacion-observada {
+  color: #9b7a36;
+}
+
+.opciones-oferta {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.opcion-oferta {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  border: 1px solid #e7ece7;
+  border-radius: 7px;
+  padding: 9px 11px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.opcion-oferta:has(input:checked) {
+  border-color: var(--green);
+  background: #f4f9f5;
+}
+
+.fila-etapa {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 8px;
+  font-size: 11px;
+}
+
+.fila-etapa input {
+  height: 35px;
+  border: 1px solid #e2e8e2;
+  border-radius: 6px;
+  padding: 0 10px;
+  font: 11px "DM Sans", sans-serif;
+}
+
+.fila-etapa input:first-child {
+  flex: 1;
+}
+
+.fila-etapa input[type="number"] {
+  width: 80px;
+}
+
+.dialogo-ancho {
+  max-width: 640px;
+  width: calc(100% - 40px);
+}
+
+.bloque-json {
+  background: #f6f8f5;
+  border-radius: 6px;
+  padding: 12px;
+  font-size: 10px;
+  max-height: 340px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
 }

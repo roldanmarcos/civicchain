@@ -18,33 +18,6 @@ const tasks = [
     .setAction(() => import("./tasks/auditar.js"))
     .build(),
 
-  task(["credencial", "solicitudes"], "Lista las solicitudes de inscripción de proveedores")
-    .addFlag({ name: "todas", description: "Incluir aprobadas, rechazadas y canceladas" })
-    .setAction(() => import("./tasks/solicitudes.js"))
-    .build(),
-
-  task(["credencial", "aprobar"], "Verifica una solicitud en AFIP, la aprueba y emite la credencial (requiere ADMIN_ROLE)")
-    .addOption({ name: "solicitud", description: "Número de solicitud", type: ArgumentType.INT, defaultValue: 0 })
-    .addOption({ name: "dias", description: "Días de vigencia", type: ArgumentType.INT, defaultValue: VIGENCIA_POR_DEFECTO_DIAS })
-    .addFlag({ name: "forzar", description: "Aprobar aunque la verificación en AFIP falle" })
-    .setAction(() => import("./tasks/aprobar.js"))
-    .build(),
-
-  task(["credencial", "rechazar"], "Rechaza una solicitud de proveedor (requiere ADMIN_ROLE)")
-    .addOption({ name: "solicitud", description: "Número de solicitud", type: ArgumentType.INT, defaultValue: 0 })
-    .addOption({ name: "motivo", description: "Motivo del rechazo (queda público)", defaultValue: "" })
-    .setAction(() => import("./tasks/rechazar.js"))
-    .build(),
-
-  task(["credencial", "solicitar"], "Simula la inscripción de un proveedor (solo red local)")
-    .addOption({ name: "cuenta", description: "Cuenta de prueba que firma (#1, #2, ...)", type: ArgumentType.INT, defaultValue: 1 })
-    .addOption({ name: "cuit", description: "CUIT de la empresa", defaultValue: "" })
-    .addOption({ name: "razonSocial", description: "Razón social", defaultValue: "" })
-    .addOption({ name: "domicilio", description: "Domicilio legal", defaultValue: "" })
-    .addOption({ name: "rubros", description: "Rubros de actividad", defaultValue: "" })
-    .setAction(() => import("./tasks/solicitar.js"))
-    .build(),
-
   task(["credencial", "revocar"], "Revoca la credencial de una wallet (requiere ADMIN_ROLE)")
     .addOption({ name: "wallet", description: "Wallet a revocar", defaultValue: "" })
     .addOption({ name: "motivo", description: "Motivo de la revocación (queda público)", defaultValue: "" })
@@ -68,9 +41,19 @@ export default defineConfig({
   tasks,
   solidity: {
     version: "0.8.28",
+    // Si no se puede descargar el compilador (por ejemplo, sin internet), se puede usar el solc de npm:
+    //   npm i -D solc@0.8.28 && SOLC_JS_PATH=node_modules/solc/soljson.js npm test
+    ...(process.env.SOLC_JS_PATH ? { path: process.env.SOLC_JS_PATH } : {}),
     settings: {
       optimizer: { enabled: true, runs: 200 },
     },
+    // Contratos de Semaphore que se despliegan tal cual vienen en npm (red local y tests).
+    // En Sepolia se usa el Semaphore que ya está desplegado (ver scripts/deploy.ts).
+    npmFilesToBuild: [
+      "@semaphore-protocol/contracts/Semaphore.sol",
+      "@semaphore-protocol/contracts/base/SemaphoreVerifier.sol",
+      "poseidon-solidity/PoseidonT3.sol",
+    ],
   },
   networks: {
     // Red simulada en memoria que usan los tests

@@ -52,6 +52,36 @@ export const acortar = (wallet) => (wallet ? `${wallet.slice(0, 6)}…${wallet.s
 export const formatearFecha = (timestamp) =>
   new Date(Number(timestamp) * 1000).toLocaleDateString("es-AR", { day: "numeric", month: "short", year: "numeric" });
 
+export const formatearFechaHora = (timestamp) =>
+  new Date(Number(timestamp) * 1000).toLocaleString("es-AR", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+
+/** 48500000n → "$ 48.500.000" */
+export const formatearPesos = (monto) => `$ ${BigInt(monto).toLocaleString("es-AR")}`;
+
+/** Monto abreviado para tarjetas: 48500000n → "$ 48,5 M" */
+export function pesosCortos(monto) {
+  const n = Number(monto);
+  if (n >= 1e9) return `$ ${(n / 1e9).toLocaleString("es-AR", { maximumFractionDigits: 1 })} mil M`;
+  if (n >= 1e6) return `$ ${(n / 1e6).toLocaleString("es-AR", { maximumFractionDigits: 1 })} M`;
+  return formatearPesos(monto);
+}
+
+/** "en 3 días", "en 12 minutos", "hace 2 horas" */
+export function tiempoRelativo(timestamp) {
+  const diff = Number(timestamp) - Math.floor(Date.now() / 1000);
+  const abs = Math.abs(diff);
+  const [valor, unidad] =
+    abs >= 86400 ? [Math.round(abs / 86400), "día"] : abs >= 3600 ? [Math.round(abs / 3600), "hora"] : [Math.max(1, Math.round(abs / 60)), "minuto"];
+  const texto = `${valor} ${unidad}${valor === 1 ? "" : "s"}`;
+  return diff >= 0 ? `en ${texto}` : `hace ${texto}`;
+}
+
 export function formatearCuit(cuit) {
   const s = String(cuit).padStart(11, "0");
   return `${s.slice(0, 2)}-${s.slice(2, 10)}-${s.slice(10)}`;
@@ -71,6 +101,7 @@ export function badgeEstado(estado) {
     REVOCADA: "status-revoked",
     RECHAZADA: "status-revoked",
     CANCELADA: "status-done",
+    AUTORIZADA: "",
   };
   const texto = estado.charAt(0) + estado.slice(1).toLowerCase();
   return html`<span class="card-status ${clases[estado] ?? ""}">${texto}</span>`;
@@ -155,4 +186,21 @@ export function pedirTexto({ titulo, descripcion = "", etiqueta, valor = "", tip
     dialogo.showModal();
     dialogo.querySelector("input").select();
   });
+}
+
+/** Diálogo simple de solo lectura (para mostrar datos). */
+export function mostrarDialogo(titulo, contenido) {
+  const dialogo = document.createElement("dialog");
+  dialogo.className = "dialogo dialogo-ancho";
+  render(
+    dialogo,
+    html`<form method="dialog">
+      <h3>${titulo}</h3>
+      ${contenido}
+      <div class="dialogo-acciones"><button class="button button-primary button-small" value="ok">Cerrar</button></div>
+    </form>`,
+  );
+  document.body.append(dialogo);
+  dialogo.addEventListener("close", () => dialogo.remove());
+  dialogo.showModal();
 }

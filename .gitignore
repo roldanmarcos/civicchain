@@ -19,3 +19,6 @@ frontend/dist/
 # Sistema / editor
 .DS_Store
 Thumbs.db
+
+# Backend: base de datos y archivos de IPFS local
+backend/data/

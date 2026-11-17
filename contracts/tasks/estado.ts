@@ -18,11 +18,9 @@ export default comoTask<Args>(async (args, hre) => {
 
   const esAdmin = await credenciales.hasRole(await credenciales.ADMIN_ROLE(), args.wallet);
   const [tokenId, c] = await credenciales.credencialDe(args.wallet);
-  const solicitudPendiente = await credenciales.solicitudPendienteDe(args.wallet);
 
   console.log(`Wallet: ${args.wallet}`);
   console.log(`Admin:  ${esAdmin ? "sí" : "no"}`);
-  if (solicitudPendiente !== 0n) console.log(`Solicitud de inscripción pendiente: #${solicitudPendiente}`);
 
   if (tokenId === 0n) {
     console.log("Credencial: ninguna");
@@ -38,6 +36,8 @@ export default comoTask<Args>(async (args, hre) => {
   if (rol === "PROVEEDOR") {
     console.log(`  Empresa:   ${c.nombre}`);
     console.log(`  CUIT:      ${formatearCuit(c.cuit)}`);
+    const [, enGrupo] = await credenciales.compromisoDe(tokenId);
+    console.log(`  Grupo ZK:  ${enGrupo ? "sí (puede ofertar)" : "no"}`);
   } else {
     const organismo = (await leerOrganismos()).find((o) => o.id === Number(c.organismoId))?.nombre ?? "—";
     console.log(`  Nombre:    ${c.nombre}`);
@@ -45,4 +45,5 @@ export default comoTask<Args>(async (args, hre) => {
   }
   console.log(`  Emitida:   ${formatearFecha(c.emitidaEn)}`);
   console.log(`  Vence:     ${formatearFecha(c.validaHasta)}`);
+  if (c.datosHash !== ethers.ZeroHash) console.log(`  Datos:     ${c.datosHash} (hash de los datos guardados en el backend)`);
 });
