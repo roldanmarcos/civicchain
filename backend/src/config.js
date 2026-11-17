@@ -6,6 +6,7 @@
 // VERIFICADOR_ROLE a la dirección del verificador (scripts/deploy.ts lo hace si se le pasa).
 
 import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { HDNodeWallet, Mnemonic } from "ethers";
 
 const CONFIG_FRONTEND = new URL("../../frontend/src/config/", import.meta.url);
@@ -23,8 +24,8 @@ export const config = {
   rpcUrl: process.env.RPC_URL ?? "http://127.0.0.1:8545",
   /** Origen de la dApp, para CORS. */
   origenDapp: process.env.ORIGEN_DAPP ?? "*",
-  baseDeDatos: process.env.DB_PATH ?? new URL("../data/civicchain.sqlite", import.meta.url).pathname,
-  carpetaIpfs: process.env.IPFS_DIR ?? new URL("../data/ipfs/", import.meta.url).pathname,
+  baseDeDatos: process.env.DB_PATH ?? fileURLToPath(new URL("../data/civicchain.sqlite", import.meta.url)),
+  carpetaIpfs: process.env.IPFS_DIR ?? fileURLToPath(new URL("../data/ipfs/", import.meta.url)),
   verificadorKey: process.env.VERIFICADOR_PRIVATE_KEY ?? cuentaHardhat(CUENTA_VERIFICADOR_LOCAL),
   relayerKey: process.env.RELAYER_PRIVATE_KEY ?? cuentaHardhat(CUENTA_RELAYER_LOCAL),
   /** Vigencia de las credenciales de proveedor que autoriza el verificador. */
