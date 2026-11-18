@@ -22,16 +22,18 @@ import { cifrarIdentidad, cifrarOferta, descifrarIdentidad, descifrarOferta } fr
  * @property {number} adjudicadaEn
  * @property {bigint} presupuestoOficial
  * @property {string} metadataCID
- * @property {number[]} porcentajesEtapas En puntos básicos
+ * @property {bigint[]} montosEtapas Monto oficial de cada etapa, en pesos (suman el presupuesto oficial)
  * @property {boolean} sobresAbiertos
  * @property {number} ofertaGanadora
  * @property {string} dictamenCID
  * @property {boolean} desierta
  * @property {string} contratista
  * @property {number} etapasAprobadas
+ * @property {number} inspectoresRequeridos Hay que asignarlos a todos antes de aprobar etapas
  * @property {bigint} fondos Wei en escrow todavía sin pagar
  * @property {boolean} financiada
  * @property {number} cantidadOfertas
+ * @property {string[]} inspectoresAsignados Wallets en minúsculas (para filtrar el listado del inspector)
  * @property {EstadoLicitacion} estado
  * @property {Metadata | null} metadata
  *
@@ -39,7 +41,7 @@ import { cifrarIdentidad, cifrarOferta, descifrarIdentidad, descifrarOferta } fr
  * @property {string} [description]
  * @property {string} [ubicacion]
  * @property {string} [pliegoCID]
- * @property {{ nombre: string, porcentaje: number }[]} [etapas]
+ * @property {{ nombre: string, monto?: string }[]} [etapas]
  */
 
 export { ESTADOS_LICITACION, WEI_POR_PESO };
@@ -53,7 +55,7 @@ export function estadoDe(l) {
   if (l.desierta) return "DESIERTA";
   if (l.ofertaGanadora) {
     if (l.contratista === ethers.ZeroAddress) return "ADJUDICADA";
-    return l.etapasAprobadas === l.porcentajesEtapas.length ? "FINALIZADA" : "EN_EJECUCION";
+    return l.etapasAprobadas === l.montosEtapas.length ? "FINALIZADA" : "EN_EJECUCION";
   }
   if (ahora() <= l.cierreOfertas) return "RECIBIENDO_OFERTAS";
   return l.sobresAbiertos ? "EVALUACION" : "APERTURA";
@@ -80,13 +82,14 @@ function normalizar(id, l, cantidadOfertas) {
     adjudicadaEn: Number(l.adjudicadaEn),
     presupuestoOficial: l.presupuestoOficial,
     metadataCID: l.metadataCID,
-    porcentajesEtapas: l.porcentajesEtapas.map(Number),
+    montosEtapas: [...l.montosEtapas],
     sobresAbiertos: l.sobresAbiertos,
     ofertaGanadora: Number(l.ofertaGanadora),
     dictamenCID: l.dictamenCID,
     desierta: l.desierta,
     contratista: l.contratista,
     etapasAprobadas: Number(l.etapasAprobadas),
+    inspectoresRequeridos: Number(l.inspectoresRequeridos),
     fondos: l.fondos,
     financiada: l.financiada,
     cantidadOfertas: Number(cantidadOfertas),
@@ -102,8 +105,9 @@ export async function leerLicitaciones() {
   const ids = Array.from({ length: total }, (_, i) => i + 1).reverse();
   return Promise.all(
     ids.map(async (id) => {
-      const [l, cantidad] = await Promise.all([c.licitacion(id), c.cantidadOfertas(id)]);
+      const [l, cantidad, inspectores] = await Promise.all([c.licitacion(id), c.cantidadOfertas(id), c.inspectores(id)]);
       const lic = normalizar(id, l, cantidad);
+      lic.inspectoresAsignados = inspectores.map((w) => w.toLowerCase());
       lic.metadata = await metadataDe(lic.metadataCID);
       return lic;
     }),
@@ -233,8 +237,8 @@ const confirmar = async (txPromesa) => {
 // ---------------------------------------------------------------------------
 
 /**
- * @param {{ titulo: string, descripcion: string, ubicacion: string, presupuesto: bigint, cierre: number,
- *   limite: number, etapas: { nombre: string, porcentaje: number }[], pliego: File }} datos
+ * @param {{ titulo: string, descripcion: string, ubicacion: string, cierre: number,
+ *   limite: number, inspectores: number, etapas: { nombre: string, monto: bigint }[], pliego: File }} datos
  */
 export async function publicarLicitacion(datos, alAvanzar = () => {}) {
   alAvanzar("Subiendo el pliego a IPFS…");
@@ -246,17 +250,18 @@ export async function publicarLicitacion(datos, alAvanzar = () => {}) {
     ubicacion: datos.ubicacion,
     pliegoCID,
     pliegoNombre: datos.pliego.name,
-    etapas: datos.etapas,
+    // Los montos van también en la cadena; acá quedan como texto para que el JSON sea legible.
+    etapas: datos.etapas.map((e) => ({ nombre: e.nombre, monto: e.monto.toString() })),
   });
   alAvanzar("Confirmá la transacción en tu wallet…");
   return confirmar(
     obtenerLicitaciones().crearLicitacion(
       datos.titulo,
       metadataCID,
-      datos.presupuesto,
       BigInt(datos.cierre),
       BigInt(datos.limite),
-      datos.etapas.map((e) => Math.round(e.porcentaje * 100)),
+      datos.etapas.map((e) => e.monto),
+      datos.inspectores,
     ),
   );
 }

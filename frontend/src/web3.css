@@ -581,3 +581,17 @@ a.detail-document {
   white-space: pre-wrap;
   word-break: break-word;
 }
+
+/* Licitaciones que publicó el empleado conectado */
+.tender-card-mia {
+  border-color: #9cc8ab;
+  box-shadow: 0 0 0 2px #26765322, var(--shadow);
+}
+.status-mia {
+  background: #26765314;
+  color: var(--green-dark);
+  font-weight: 700;
+}
+.status-mia:before {
+  background: var(--green);
+}

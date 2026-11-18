@@ -8,12 +8,12 @@ Trabajo Práctico Integrador — Seminario de Blockchain & Smart Contracts, UNQ.
 | Fase | Qué pasa | Dónde |
 |---|---|---|
 | 0. Habilitación | El proveedor se inscribe; el backend verifica en AFIP y firma una autorización; recibe su credencial (NFT intransferible) y su identidad anónima entra al grupo de Semaphore. Empleados e inspectores los da de alta un admin. | `CredencialNFT` + backend |
-| 1. Publicación | Un empleado publica la licitación (NFT ERC-721 con tokenURI a IPFS) con dos fechas: **cierre de ofertas** y **fecha límite de adjudicación**. | `crearLicitacion` |
+| 1. Publicación | Un empleado publica la licitación (NFT ERC-721 con tokenURI a IPFS) con dos fechas: **cierre de ofertas** y **fecha límite de adjudicación**. Carga el **monto oficial de cada etapa**: la suma es el presupuesto oficial (tope para adjudicar). Cada oferente cotiza su propio monto por etapa. | `crearLicitacion` |
 | 2. Ofertas | El proveedor prueba con Semaphore que está habilitado y manda dos cifrados con timelock (drand): el contenido de la oferta (se puede abrir desde el cierre) y su identidad (desde la fecha límite). La oferta la manda el relayer. El nullifier impide ofertar dos veces. | dApp + relayer |
 | 3. Apertura de sobres | Después del cierre, un empleado del organismo abre **todos los sobres juntos**, en una sola transacción, cuando va a evaluar. El ofertante no puede abrir nada; los sobres que no se pueden descifrar quedan descartados. Cualquiera puede verificar la apertura. | `abrirSobres` |
 | 4. Adjudicación | El empleado elige una oferta por número y publica su dictamen, antes de la fecha límite (después solo puede declararla desierta). | `adjudicar` |
 | 5. Identidades | En la fecha límite drand libera la segunda clave y las identidades de todas las ofertas se revelan solas (las publica el bot del backend o cualquiera desde la dApp). El ganador puede revelarse antes si quiere arrancar la obra. | `revelarIdentidades` |
-| 6. Ejecución | El organismo deposita el monto adjudicado en el contrato (escrow, en ETH: 1 peso = 1 gwei). Un inspector **del mismo organismo** aprueba las etapas en orden y cada aprobación le paga sola al contratista lo que cotizó para esa etapa. | `depositarFondos`, `registrarEvaluacion` |
+| 6. Ejecución | El organismo deposita el monto adjudicado en el contrato (escrow, en ETH: 1 peso = 1 gwei). El organismo asigna la cantidad de inspectores **del mismo organismo** que fijó al publicar (ni más ni menos: hasta tenerlos a todos no se aprueba nada). Las etapas se aprueban en orden y cada una tiene que aprobarla **cada uno** de los inspectores; cuando aprueba el último, el contrato le paga solo al contratista lo que cotizó para esa etapa. | `depositarFondos`, `registrarEvaluacion` |
 
 ## Estructura
 
@@ -151,9 +151,11 @@ Variables de entorno: `RPC_URL`, `VERIFICADOR_PRIVATE_KEY`, `RELAYER_PRIVATE_KEY
 | Sin credencial | Inscripción de proveedor (con el motivo del último rechazo, si hubo) |
 | Cualquiera con wallet | "Verificar apertura" (descifra los sobres y compara) y "Revelar identidades" después de la fecha límite |
 | Proveedor | Ofertar de forma anónima; si ganó, revelarse antes de la fecha límite (opcional) |
-| Empleado | Publicar licitación; abrir los sobres, adjudicar o declarar desierta, depositar los fondos y asignar inspectores (solo su organismo) |
-| Inspector asignado | Aprobar u observar la siguiente etapa, con informe en IPFS; al aprobar se le paga al contratista |
+| Empleado | Publicar licitación; abrir los sobres, adjudicar o declarar desierta, depositar los fondos y asignar inspectores (solo su organismo). En el listado ve solo las licitaciones de su organismo, con las que publicó él marcadas |
+| Inspector asignado | En el listado ve solo las obras en las que está asignado. Aprueba u observa la siguiente etapa, con informe en IPFS; cuando aprueban todos los inspectores se le paga al contratista |
 | Admin | Alta de funcionarios, decisiones del verificador, auditoría contra el padrón, credenciales |
+
+El filtro de los listados por rol es solo de la interfaz: los datos de las licitaciones son públicos en la blockchain.
 
 La identidad anónima del proveedor no se guarda en ningún lado: sale de firmar siempre el mismo mensaje con la
 wallet. Lo mismo la sal de autoría de cada licitación. Así se recupera desde cualquier navegador.

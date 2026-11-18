@@ -169,27 +169,27 @@ const ejemplos = [
     descripcion:
       "Ampliación de consultorios y renovación de las instalaciones eléctricas y sanitarias del Centro de Salud San Martín. Contempla nuevas áreas de atención y accesibilidad para pacientes.",
     ubicacion: "Quilmes, Buenos Aires",
-    presupuesto: 48_500_000n,
     cierreEnMinutos: 15,
     // Fecha límite de adjudicación: ahí se revelan solas las identidades de los ofertantes.
     limiteEnMinutos: 35,
+    inspectores: 1, // Laura Benítez
     etapas: [
-      { nombre: "Demolición y obra gruesa", porcentaje: 30 },
-      { nombre: "Instalaciones eléctricas y sanitarias", porcentaje: 40 },
-      { nombre: "Terminaciones y accesibilidad", porcentaje: 30 },
+      { nombre: "Demolición y obra gruesa", monto: 14_550_000n },
+      { nombre: "Instalaciones eléctricas y sanitarias", monto: 19_400_000n },
+      { nombre: "Terminaciones y accesibilidad", monto: 14_550_000n },
     ],
   },
   {
     titulo: "Pavimentación de calles — Barrio Los Aromos",
     descripcion: "Pavimentación y obras pluviales en 12 cuadras del Barrio Los Aromos: preparación del terreno, desagües y calzada de hormigón.",
     ubicacion: "Quilmes, Buenos Aires",
-    presupuesto: 76_200_000n,
     cierreEnMinutos: 7 * 24 * 60,
     limiteEnMinutos: 14 * 24 * 60,
+    inspectores: 2, // hay una sola inspectora de Quilmes: el admin tiene que dar de alta otra
     etapas: [
-      { nombre: "Movimiento de suelos", porcentaje: 20 },
-      { nombre: "Desagües pluviales", porcentaje: 35 },
-      { nombre: "Calzada de hormigón", porcentaje: 45 },
+      { nombre: "Movimiento de suelos", monto: 15_240_000n },
+      { nombre: "Desagües pluviales", monto: 26_670_000n },
+      { nombre: "Calzada de hormigón", monto: 34_290_000n },
     ],
   },
 ];
@@ -202,7 +202,7 @@ for (const e of ejemplos) {
       description: e.descripcion,
       ubicacion: e.ubicacion,
       pliegoCID,
-      etapas: e.etapas,
+      etapas: e.etapas.map((x) => ({ nombre: x.nombre, monto: x.monto.toString() })),
     };
     const metadataCID = await subirAlBackend(JSON.stringify(metadata), "application/json");
     // Fechas según el reloj real (y no el del último bloque), igual que la dApp y la ronda de drand.
@@ -210,7 +210,7 @@ for (const e of ejemplos) {
     const cierre = BigInt(ahora + e.cierreEnMinutos * 60);
     const limite = BigInt(ahora + e.limiteEnMinutos * 60);
     await (
-      await licitaciones.crearLicitacion(e.titulo, metadataCID, e.presupuesto, cierre, limite, e.etapas.map((x) => x.porcentaje * 100))
+      await licitaciones.crearLicitacion(e.titulo, metadataCID, cierre, limite, e.etapas.map((x) => x.monto), e.inspectores)
     ).wait();
   });
 }
@@ -219,7 +219,7 @@ console.log('\nCuentas sin credencial, para probar el caso "sin acceso" o una in
 console.log("Claves fiscales de demo (para inscribirse desde la dApp): ver backend/src/afip/padron.json (claveFiscalDemo).");
 
 /** PDF mínimo de una página con el texto del pliego (para no depender de archivos binarios en el repo). */
-function pliegoPdf(titulo: string, descripcion: string, etapas: { nombre: string; porcentaje: number }[]): Uint8Array {
+function pliegoPdf(titulo: string, descripcion: string, etapas: { nombre: string; monto: bigint }[]): Uint8Array {
   const limpiar = (t: string) => t.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[()\\]/g, "").replace(/—/g, "-");
   const lineas = [
     "PLIEGO DE BASES Y CONDICIONES (ejemplo)",
@@ -228,8 +228,9 @@ function pliegoPdf(titulo: string, descripcion: string, etapas: { nombre: string
     "",
     ...(limpiar(descripcion).match(/.{1,85}(\s|$)/g) ?? []).map((l) => l.trim()),
     "",
-    "Etapas y porcentaje de pago:",
-    ...etapas.map((x, i) => `${i + 1}. ${limpiar(x.nombre)} - ${x.porcentaje}%`),
+    "Etapas y monto oficial:",
+    ...etapas.map((x, i) => `${i + 1}. ${limpiar(x.nombre)} - $ ${x.monto.toLocaleString("es-AR")}`),
+    `Presupuesto oficial: $ ${etapas.reduce((s, x) => s + x.monto, 0n).toLocaleString("es-AR")}`,
     "",
     "Las ofertas se presentan de forma anonima a traves de CivicChain.",
   ];

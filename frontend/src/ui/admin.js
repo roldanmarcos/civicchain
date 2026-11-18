@@ -184,7 +184,8 @@ async function buscarEnPadron(dni) {
 async function enviarAlta(form) {
   const valor = (n) => /** @type {HTMLInputElement} */ (form.elements.namedItem(n)).value.trim();
   const datos = {
-    wallet: valor("wallet"),
+    // Tolera lo que se cuela al copiar y pegar (espacios, comillas, backticks) y el checksum en mayúsculas mal.
+    wallet: valor("wallet").replace(/[\s"'`]/g, "").toLowerCase(),
     rol: /** @type {"EMPLEADO" | "INSPECTOR"} */ (valor("rol")),
     organismoId: Number(valor("organismoId")),
     nombre: valor("nombre"),

@@ -65,9 +65,11 @@ export const badgeLicitacion = (estado) => {
 /** @param {import("../web3/licitaciones.js").Licitacion} l */
 export function tarjetaLicitacion(l) {
   const lugar = l.metadata?.ubicacion?.split(",")[0];
-  return html`<article class="tender-card" tabindex="0" role="button" data-tender="${l.id}" aria-label="Ver ${l.titulo}">
+  const sesion = obtenerSesion();
+  const esMia = rolActivo() === "EMPLEADO" && sesion.cuenta && l.creador.toLowerCase() === sesion.cuenta.toLowerCase();
+  return html`<article class="tender-card ${esMia ? "tender-card-mia" : ""}" tabindex="0" role="button" data-tender="${l.id}" aria-label="Ver ${l.titulo}">
     <div class="tender-visual visual-${TEMAS[l.id % TEMAS.length]}"><span class="visual-tag">CC-${String(l.id).padStart(3, "0")}</span><span class="visual-building"></span><span class="visual-number">CIVICCHAIN · NFT #${l.id}</span></div>
-    ${badgeLicitacion(l.estado)}
+    ${badgeLicitacion(l.estado)} ${esMia ? html`<span class="card-status status-mia">Publicada por vos</span>` : ""}
     <h3>${l.titulo}</h3><p class="agency">${nombreOrganismo(l.organismoId)}${lugar ? ` · ${lugar}` : ""}</p>
     <div class="card-meta"><span>${l.estado === "RECIBIENDO_OFERTAS" ? `Cierra ${tiempoRelativo(l.cierreOfertas)}` : `${l.cantidadOfertas} oferta(s)`}</span><strong>${pesosCortos(l.presupuestoOficial)}</strong></div>
   </article>`;
@@ -128,7 +130,7 @@ export async function renderDetalle(id = detalleActual) {
 
   const fase = indiceFase(d.estado);
   const meta = d.metadata ?? {};
-  const etapas = d.porcentajesEtapas.map((p, i) => ({ nombre: meta.etapas?.[i]?.nombre ?? `Etapa ${i + 1}`, porcentaje: p / 100 }));
+  const etapas = d.montosEtapas.map((monto, i) => ({ nombre: meta.etapas?.[i]?.nombre ?? `Etapa ${i + 1}`, monto }));
   const ganadora = d.ofertas.find((o) => o.id === d.ofertaGanadora);
   const progreso = d.estado === "FINALIZADA" ? 100 : Math.round(((fase < 0 ? 0 : fase) / (FASES.length - 1)) * 100);
 
@@ -219,16 +221,27 @@ function seccionOfertas(d) {
   <p class="texto-suave">Cada oferta trae una prueba de conocimiento cero: el contrato verificó que la mandó un proveedor habilitado sin saber cuál. Las mandó el relayer, no la wallet del proveedor.</p>`;
 }
 
+/** Inspectores que ya aprobaron la etapa (sin repetir) y los que faltan. La etapa se paga cuando aprueban todos. */
+function aprobacionesDe(d, etapa) {
+  const aprobaron = [...new Set(d.evaluaciones.filter((e) => e.etapa === etapa && e.aprobada).map((e) => e.inspector.toLowerCase()))];
+  const faltan = d.inspectores.filter((i) => !aprobaron.includes(i.wallet.toLowerCase()));
+  return { aprobaron, faltan };
+}
+
 function seccionEtapas(d, etapas) {
   return html`<ol class="etapas">${etapas.map((e, i) => {
     const evaluaciones = d.evaluaciones.filter((x) => x.etapa === i);
     const aprobada = i < d.etapasAprobadas;
     return html`<li class="${aprobada ? "etapa-aprobada" : i === d.etapasAprobadas && d.estado === "EN_EJECUCION" ? "etapa-actual" : ""}">
-      <div><strong>${e.nombre}</strong> <span class="texto-suave">· ${e.porcentaje}% de la obra${
+      <div><strong>${e.nombre}</strong> <span class="texto-suave">· oficial ${formatearPesos(e.monto)}${
         d.ofertaGanadora && d.ofertas.find((o) => o.id === d.ofertaGanadora)?.desglose[i] !== undefined
-          ? ` · ${formatearPesos(d.ofertas.find((o) => o.id === d.ofertaGanadora).desglose[i])}`
+          ? ` · cotizado ${formatearPesos(d.ofertas.find((o) => o.id === d.ofertaGanadora).desglose[i])}`
           : ""
-      }</span> ${aprobada ? html`<span class="card-status">Aprobada</span>` : ""}
+      }</span> ${aprobada ? html`<span class="card-status">Aprobada</span>` : ""}${
+        !aprobada && i === d.etapasAprobadas && d.estado === "EN_EJECUCION" && d.inspectores.length > 0
+          ? html` <span class="texto-suave">· ${aprobacionesDe(d, i).aprobaron.length} de ${d.inspectoresRequeridos} aprobaciones</span>`
+          : ""
+      }
       ${d.pagos.filter((pg) => pg.etapa === i).map((pg) => html` <span class="card-status status-executing">Pagado ${eth(pg.monto)}</span> ${enlaceTx(pg.txHash)}`)}</div>
       ${evaluaciones.map(
         (ev) => html`<div class="evaluacion ${ev.aprobada ? "" : "evaluacion-observada"}">
@@ -238,7 +251,9 @@ function seccionEtapas(d, etapas) {
       )}
     </li>`;
   })}</ol>
-  ${d.inspectores.length > 0 && html`<p class="texto-suave">Inspectores asignados: ${d.inspectores.map((i, n) => html`${n ? ", " : ""}${i.nombre ?? acortar(i.wallet)}`)}</p>`}`;
+  <p class="texto-suave">Inspectores asignados: ${d.inspectores.length} de ${d.inspectoresRequeridos} requeridos${
+    d.inspectores.length > 0 ? html` (${d.inspectores.map((i, n) => html`${n ? ", " : ""}${i.nombre ?? acortar(i.wallet)}`)})` : ""
+  }</p>`;
 }
 
 function seccionRegistro(d) {
@@ -354,8 +369,10 @@ function renderPanelAccion(d, etapas) {
       <button class="button button-primary button-small" id="depositar-fondos">Depositar ${eth(pesosAWei(ganadora.monto))}</button></div>`);
   }
 
-  if (esEmpleadoDelOrganismo && ["ADJUDICADA", "EN_EJECUCION"].includes(d.estado)) {
-    bloques.push(html`<div class="panel-card"><div class="panel-card-head"><strong>Asignar inspector</strong></div>
+  const faltanInspectores = d.inspectoresRequeridos - d.inspectores.length;
+  if (esEmpleadoDelOrganismo && ["ADJUDICADA", "EN_EJECUCION"].includes(d.estado) && faltanInspectores > 0) {
+    bloques.push(html`<div class="panel-card"><div class="panel-card-head"><strong>Asignar inspector</strong>
+        <span class="role-tag">${d.inspectores.length} DE ${d.inspectoresRequeridos}</span></div>
       <form id="form-inspector" class="busqueda-dni"><div class="form-field"><label for="inspector-wallet">Inspector de ${nombreOrganismo(d.organismoId)}</label>
         <select id="inspector-wallet"><option value="">Cargando inspectores…</option></select></div>
         <button class="button button-outline button-small" type="submit">Asignar</button></form></div>`);
@@ -364,7 +381,16 @@ function renderPanelAccion(d, etapas) {
   if (esInspectorAsignado && d.estado === "EN_EJECUCION" && !d.financiada) {
     bloques.push(html`<div class="alerta alerta-aviso"><strong>Todavía no se depositaron los fondos</strong><p>Hasta que el organismo deposite el monto adjudicado no se pueden aprobar etapas (no habría con qué pagarlas).</p></div>`);
   }
-  if (esInspectorAsignado && d.estado === "EN_EJECUCION" && d.financiada) bloques.push(formularioEvaluacion(d, etapas));
+  if (esInspectorAsignado && d.estado === "EN_EJECUCION" && d.financiada && faltanInspectores > 0) {
+    bloques.push(html`<div class="alerta alerta-aviso"><strong>Faltan inspectores</strong><p>La obra requiere ${d.inspectoresRequeridos} inspectores y hay ${d.inspectores.length} asignados. Hasta que el organismo asigne ${faltanInspectores === 1 ? "al que falta" : `a los ${faltanInspectores} que faltan`} no se pueden aprobar etapas.</p></div>`);
+  }
+  if (esInspectorAsignado && d.estado === "EN_EJECUCION" && d.financiada && faltanInspectores <= 0) {
+    const { aprobaron, faltan } = aprobacionesDe(d, d.etapasAprobadas);
+    if (aprobaron.includes(sesion.cuenta.toLowerCase()))
+      bloques.push(html`<div class="alerta alerta-ok"><strong>Ya aprobaste la etapa ${d.etapasAprobadas + 1}</strong>
+        <p>Se paga cuando la aprueben todos los inspectores. Falta${faltan.length === 1 ? "" : "n"}: ${faltan.map((i, n) => html`${n ? ", " : ""}${i.nombre ?? acortar(i.wallet)}`)}.</p></div>`);
+    else bloques.push(formularioEvaluacion(d, etapas));
+  }
 
   render(panel, html`${bloques}`);
   conectarPanel(d, etapas);
@@ -395,7 +421,7 @@ function formularioOferta(d, etapas) {
       con una prueba de que estás habilitado, sin revelar quién sos. Vas a firmar dos mensajes con tu wallet (no son transacciones ni cuestan gas).</p>
     <div class="form-grid">
       ${etapas.map(
-        (e, i) => html`<div class="form-field"><label for="oferta-etapa-${i}">${e.nombre} (${e.porcentaje}%)</label>
+        (e, i) => html`<div class="form-field"><label for="oferta-etapa-${i}">${e.nombre} <span class="texto-suave">(oficial ${formatearPesos(e.monto)})</span></label>
           <input id="oferta-etapa-${i}" name="etapa-${i}" inputmode="numeric" placeholder="Monto en pesos" required></div>`,
       )}
       <div class="form-field"><label for="oferta-plazo">Plazo de ejecución (días)</label><input id="oferta-plazo" name="plazo" type="number" min="1" required></div>
@@ -412,8 +438,6 @@ function formularioAdjudicacion(d) {
   const abiertas = d.ofertas.filter((o) => o.abierta).sort((a, b) => (a.monto < b.monto ? -1 : 1));
   return html`<form class="panel-card" id="form-adjudicacion" novalidate>
     <div class="panel-card-head"><strong>Evaluación y adjudicación</strong><span class="role-tag">SOLO TU ORGANISMO</span></div>
-    <p class="texto-suave">Elegí una oferta por número. La identidad de los oferentes se conoce recién después de adjudicar.
-      Si no elegís la más baja, el dictamen tiene que fundamentarlo.</p>
     ${
       abiertas.length
         ? html`<div class="opciones-oferta">${abiertas.map(
@@ -438,7 +462,8 @@ function formularioEvaluacion(d, etapas) {
   const etapa = d.etapasAprobadas;
   return html`<form class="panel-card" id="form-evaluacion" novalidate>
     <div class="panel-card-head"><strong>Evaluar etapa ${etapa + 1}: ${etapas[etapa].nombre}</strong><span class="role-tag">INSPECCIÓN</span></div>
-    <p class="texto-suave">Si la aprobás, el contrato le paga solo al contratista lo que cotizó para esta etapa:
+    <p class="texto-suave">La etapa queda aprobada cuando la aprueban los ${d.inspectoresRequeridos} inspectores de la obra
+      (van ${aprobacionesDe(d, etapa).aprobaron.length}). En ese momento el contrato le paga solo al contratista lo que cotizó para esta etapa:
       ${formatearPesos(d.ofertas.find((o) => o.id === d.ofertaGanadora)?.desglose[etapa] ?? 0n)}
       (${eth(pesosAWei(d.ofertas.find((o) => o.id === d.ofertaGanadora)?.desglose[etapa] ?? 0n))}).</p>
     <div class="form-field"><label for="informe-texto">Informe</label><textarea id="informe-texto" rows="3" required></textarea></div>
@@ -654,7 +679,10 @@ function conectarPanel(d, etapas) {
       try {
         mensaje("evaluacion-resultado", "Subiendo el informe a IPFS y esperando tu firma…");
         await registrarEvaluacion(d.id, d.etapasAprobadas, aprobada, texto, archivo);
-        mostrarToast(aprobada ? "Etapa aprobada: se le pagó al contratista." : "Observación registrada.");
+        const ultima = aprobacionesDe(d, d.etapasAprobadas).aprobaron.length + 1 >= d.inspectoresRequeridos;
+        mostrarToast(
+          !aprobada ? "Observación registrada." : ultima ? "Etapa aprobada por todos: se le pagó al contratista." : "Aprobación registrada. Falta que aprueben los demás inspectores.",
+        );
         delete formEval.dataset.ocupado;
         renderDetalle();
       } catch (error) {

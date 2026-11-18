@@ -22,8 +22,7 @@ const MENSAJES_CONTRATO = {
   OtroOrganismo: "La licitación (o el inspector) es de otro organismo.",
   LicitacionInexistente: "La licitación no existe.",
   OfertaInexistente: "La oferta no existe.",
-  EtapasInvalidas: "Los porcentajes de las etapas tienen que sumar 100 % (y ninguno puede ser 0).",
-  PresupuestoInvalido: "El presupuesto tiene que ser mayor a cero.",
+  EtapasInvalidas: "Cada etapa necesita un monto mayor a cero (y puede haber hasta 20 etapas).",
   FueraDePlazo: "Esta acción no corresponde a la etapa actual de la licitación.",
   OfertaDuplicada: "Tu empresa ya ofertó en esta licitación.",
   SobresIncompletos: "Hay que abrir todos los sobres juntos.",
@@ -40,6 +39,10 @@ const MENSAJES_CONTRATO = {
   AutoriaIncorrecta: "Esta wallet no es la autora de esa oferta.",
   AutoriaYaRevelada: "La autoría ya fue revelada.",
   InspectorYaAsignado: "Ese inspector ya está asignado.",
+  InspectoresInvalidos: "La obra tiene que requerir entre 1 y 10 inspectores.",
+  CupoDeInspectoresCompleto: "La obra ya tiene asignados todos los inspectores que requiere.",
+  FaltanInspectores: "Todavía faltan asignar inspectores: hasta tener todos los que requiere la obra no se pueden aprobar etapas.",
+  YaAprobasteEstaEtapa: "Ya aprobaste esta etapa. Se paga cuando la aprueben los demás inspectores.",
   NoEsInspectorAsignado: "No sos inspector asignado a esta obra.",
   EtapaIncorrecta: "Hay que evaluar las etapas en orden.",
   SinContratista: "El ganador todavía no reveló su identidad.",
@@ -54,6 +57,9 @@ export function explicarError(error) {
 
   if (e?.code === "ACTION_REJECTED" || e?.code === 4001 || e?.info?.error?.code === 4001) {
     return "Cancelaste la operación en MetaMask.";
+  }
+  if (e?.code === 4100 || e?.info?.error?.code === 4100 || e?.error?.code === 4100) {
+    return "La cuenta elegida en MetaMask no está conectada a este sitio. Abrí MetaMask, tocá \"No conectada\" (o el ícono del sitio) y conectá esta cuenta, después volvé a intentar.";
   }
   if (e?.code === "INSUFFICIENT_FUNDS") {
     return "Tu wallet no tiene ETH suficiente para pagar el gas.";

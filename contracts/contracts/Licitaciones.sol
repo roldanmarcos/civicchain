@@ -29,10 +29,11 @@ import {ICredencialNFT} from "./interfaces/ICredencialNFT.sol";
 /// @dev Las ofertas no las manda la wallet del proveedor sino el relayer (backend), para que ninguna
 ///      dirección identificable aparezca en la transacción. La autorización la da la prueba ZK.
 contract Licitaciones is ERC721, ReentrancyGuard {
-    uint16 public constant BPS = 10_000;
     uint256 public constant MAX_ETAPAS = 20;
     uint256 public constant MAX_OFERTAS = 100;
     uint256 public constant MAX_TITULO = 160;
+    /// @notice Máximo de inspectores que puede requerir una obra.
+    uint8 public constant MAX_INSPECTORES = 10;
     /// @notice Tiempo mínimo entre el cierre y la fecha límite de adjudicación (para abrir y evaluar).
     ///         DUDA: en producción serían días o semanas; se deja corto para poder hacer la demo en clase.
     uint64 public constant MIN_EVALUACION = 5 minutes;
@@ -58,16 +59,17 @@ contract Licitaciones is ERC721, ReentrancyGuard {
         uint64 cierreOfertas;
         uint64 limiteAdjudicacion; // también es cuando se revelan las identidades (ronda de drand)
         uint64 adjudicadaEn;
-        uint256 presupuestoOficial; // pesos
+        uint256 presupuestoOficial; // pesos: la suma de los montos de las etapas
         string titulo;
         string metadataCID; // JSON en IPFS: descripción, ubicación, nombres de etapas y CID del pliego
-        uint16[] porcentajesEtapas; // en puntos básicos; suman 10.000
+        uint256[] montosEtapas; // monto oficial de cada etapa, en pesos (referencia para los oferentes)
         bool sobresAbiertos;
         uint256 ofertaGanadora; // 0 = ninguna
         string dictamenCID;
         bool desierta;
         address contratista; // wallet del ganador, cuando se conoce
         uint8 etapasAprobadas;
+        uint8 inspectoresRequeridos; // hay que asignarlos a todos antes de aprobar etapas; no se puede asignar más
         uint256 fondos; // wei depositados en escrow que todavía no se pagaron
         bool financiada;
     }
@@ -123,6 +125,8 @@ contract Licitaciones is ERC721, ReentrancyGuard {
     mapping(uint256 licitacionId => mapping(uint256 nullifier => bool)) private _nullifierUsado;
     mapping(uint256 licitacionId => address[]) private _inspectores;
     mapping(uint256 licitacionId => mapping(address => bool)) private _esInspector;
+    mapping(uint256 licitacionId => mapping(uint256 etapa => mapping(address inspector => bool))) private _aprobo;
+    mapping(uint256 licitacionId => mapping(uint256 etapa => uint256)) private _aprobaciones;
 
     event LicitacionPublicada(
         uint256 indexed licitacionId,
@@ -168,7 +172,6 @@ contract Licitaciones is ERC721, ReentrancyGuard {
     error TextoInvalido();
     error FechaInvalida();
     error EtapasInvalidas();
-    error PresupuestoInvalido();
     error FueraDePlazo(Estado estado);
     error PlazoDeAdjudicacionVencido();
     error IdentidadesTodaviaOcultas();
@@ -185,6 +188,10 @@ contract Licitaciones is ERC721, ReentrancyGuard {
     error AutoriaIncorrecta(uint256 ofertaId);
     error AutoriaYaRevelada();
     error InspectorYaAsignado();
+    error InspectoresInvalidos();
+    error CupoDeInspectoresCompleto();
+    error FaltanInspectores(uint256 asignados, uint256 requeridos);
+    error YaAprobasteEstaEtapa();
     error NoEsInspectorAsignado();
     error EtapaIncorrecta();
     error SinContratista();
@@ -206,21 +213,23 @@ contract Licitaciones is ERC721, ReentrancyGuard {
     /// @notice Publica una licitación. Solo empleados estatales con credencial vigente.
     /// @param cierreOfertas Hasta cuándo se reciben ofertas. Fija la ronda de drand de los montos.
     /// @param limiteAdjudicacion Hasta cuándo se puede adjudicar. Fija la ronda de drand de las identidades.
-    /// @param porcentajesEtapas Porcentaje de cada etapa de la obra, en puntos básicos (suman 10.000).
+    /// @param montosEtapas Monto oficial de cada etapa, en pesos. El presupuesto oficial es su suma y es el
+    ///        tope para adjudicar. Cada oferente cotiza su propio monto por etapa (solo el total tiene tope).
+    /// @param inspectoresRequeridos Cuántos inspectores necesita la obra (de 1 a MAX_INSPECTORES).
     function crearLicitacion(
         string calldata titulo,
         string calldata metadataCID,
-        uint256 presupuestoOficial,
         uint64 cierreOfertas,
         uint64 limiteAdjudicacion,
-        uint16[] calldata porcentajesEtapas
+        uint256[] calldata montosEtapas,
+        uint8 inspectoresRequeridos
     ) external returns (uint256 id) {
         uint32 organismo = _organismoDe(msg.sender, ICredencialNFT.Rol.EMPLEADO);
         if (bytes(titulo).length == 0 || bytes(titulo).length > MAX_TITULO) revert TextoInvalido();
         if (bytes(metadataCID).length == 0) revert TextoInvalido();
-        if (presupuestoOficial == 0) revert PresupuestoInvalido();
         if (cierreOfertas <= block.timestamp || limiteAdjudicacion < cierreOfertas + MIN_EVALUACION) revert FechaInvalida();
-        _validarEtapas(porcentajesEtapas);
+        uint256 presupuestoOficial = _sumarEtapas(montosEtapas);
+        if (inspectoresRequeridos == 0 || inspectoresRequeridos > MAX_INSPECTORES) revert InspectoresInvalidos();
 
         id = _proximoId++;
         Licitacion storage l = _licitaciones[id];
@@ -232,11 +241,19 @@ contract Licitaciones is ERC721, ReentrancyGuard {
         l.presupuestoOficial = presupuestoOficial;
         l.titulo = titulo;
         l.metadataCID = metadataCID;
-        l.porcentajesEtapas = porcentajesEtapas;
+        l.montosEtapas = montosEtapas;
+        l.inspectoresRequeridos = inspectoresRequeridos;
 
         // El NFT queda en custodia de este contrato: representa la licitación, no le pertenece a una persona.
         _mint(address(this), id);
-        emit LicitacionPublicada(id, organismo, msg.sender, titulo, metadataCID, presupuestoOficial, cierreOfertas, limiteAdjudicacion);
+        _emitirPublicada(id, l);
+    }
+
+    /// @dev Aparte de crearLicitacion para no pasarse del límite de variables en la pila.
+    function _emitirPublicada(uint256 id, Licitacion storage l) private {
+        emit LicitacionPublicada(
+            id, l.organismoId, l.creador, l.titulo, l.metadataCID, l.presupuestoOficial, l.cierreOfertas, l.limiteAdjudicacion
+        );
     }
 
     // ---------------------------------------------------------------------
@@ -335,7 +352,7 @@ contract Licitaciones is ERC721, ReentrancyGuard {
                 emit OfertaDescartada(licitacionId, ofertaId);
                 continue;
             }
-            _abrir(licitacionId, ofertaId, ofertas[i], sobres[i], l.porcentajesEtapas.length);
+            _abrir(licitacionId, ofertaId, ofertas[i], sobres[i], l.montosEtapas.length);
             validas++;
         }
         l.sobresAbiertos = true;
@@ -455,20 +472,26 @@ contract Licitaciones is ERC721, ReentrancyGuard {
         emit FondosDepositados(licitacionId, msg.sender, msg.value);
     }
 
-    /// @notice Un empleado del organismo asigna un inspector del mismo organismo a la obra.
+    /// @notice Un empleado del organismo asigna un inspector del mismo organismo a la obra, hasta completar
+    ///         la cantidad que se fijó al publicarla.
     function asignarInspector(uint256 licitacionId, address inspector) external {
         Licitacion storage l = _licitacion(licitacionId);
         _exigirEmpleadoDe(l.organismoId);
         if (_organismoDe(inspector, ICredencialNFT.Rol.INSPECTOR) != l.organismoId) revert OtroOrganismo();
         if (_esInspector[licitacionId][inspector]) revert InspectorYaAsignado();
+        if (_inspectores[licitacionId].length >= l.inspectoresRequeridos) revert CupoDeInspectoresCompleto();
         _esInspector[licitacionId][inspector] = true;
         _inspectores[licitacionId].push(inspector);
         emit InspectorAsignado(licitacionId, inspector);
     }
 
-    /// @notice El inspector registra su evaluación de la siguiente etapa pendiente. Si la aprueba, el
-    ///         contrato le paga al contratista lo que cotizó para esa etapa (desglose de su oferta).
-    /// @dev Si no la aprueba, queda registrada la observación y la etapa sigue pendiente (no se paga).
+    /// @notice El inspector registra su evaluación de la siguiente etapa pendiente. La etapa se da por
+    ///         aprobada cuando la aprueban todos los inspectores de la obra; en ese momento el contrato le
+    ///         paga al contratista lo que cotizó para esa etapa (desglose de su oferta).
+    /// @dev Una observación queda registrada y no cambia nada: la etapa sigue pendiente hasta que la
+    ///      aprueben todos. Un inspector no puede aprobar dos veces ni observar después de haber aprobado.
+    ///      DUDA: si a un inspector asignado le revocan la credencial, la etapa no se puede completar
+    ///      (el cupo está lleno). Haría falta una función para reemplazarlo; no está implementada.
     function registrarEvaluacion(
         uint256 licitacionId,
         uint256 etapa,
@@ -477,14 +500,22 @@ contract Licitaciones is ERC721, ReentrancyGuard {
     ) external nonReentrant {
         Licitacion storage l = _licitacion(licitacionId);
         if (!_esInspector[licitacionId][msg.sender]) revert NoEsInspectorAsignado();
+        uint256 asignados = _inspectores[licitacionId].length;
+        if (asignados < l.inspectoresRequeridos) revert FaltanInspectores(asignados, l.inspectoresRequeridos);
         if (!credenciales.tieneRolActivo(msg.sender, ICredencialNFT.Rol.INSPECTOR)) revert SinRol(ICredencialNFT.Rol.INSPECTOR);
         if (l.contratista == address(0)) revert SinContratista();
         if (!l.financiada) revert SinFondos();
-        if (etapa != l.etapasAprobadas || etapa >= l.porcentajesEtapas.length) revert EtapaIncorrecta();
+        if (etapa != l.etapasAprobadas || etapa >= l.montosEtapas.length) revert EtapaIncorrecta();
         if (bytes(informeCID).length == 0) revert TextoInvalido();
+
+        if (_aprobo[licitacionId][etapa][msg.sender]) revert YaAprobasteEstaEtapa();
 
         emit EvaluacionRegistrada(licitacionId, etapa, msg.sender, aprobada, informeCID);
         if (!aprobada) return;
+
+        _aprobo[licitacionId][etapa][msg.sender] = true;
+        // Todos los asignados son exactamente los requeridos (no se puede asignar más ni evaluar con menos).
+        if (++_aprobaciones[licitacionId][etapa] < l.inspectoresRequeridos) return;
 
         l.etapasAprobadas++;
         uint256 pago = _desgloses[licitacionId][l.ofertaGanadora][etapa] * WEI_POR_PESO;
@@ -505,7 +536,7 @@ contract Licitaciones is ERC721, ReentrancyGuard {
         if (l.desierta) return Estado.DESIERTA;
         if (l.ofertaGanadora != 0) {
             if (l.contratista == address(0)) return Estado.ADJUDICADA;
-            if (l.etapasAprobadas == l.porcentajesEtapas.length) return Estado.FINALIZADA;
+            if (l.etapasAprobadas == l.montosEtapas.length) return Estado.FINALIZADA;
             return Estado.EN_EJECUCION;
         }
         if (block.timestamp <= l.cierreOfertas) return Estado.RECIBIENDO_OFERTAS;
@@ -534,6 +565,15 @@ contract Licitaciones is ERC721, ReentrancyGuard {
 
     function desgloseDe(uint256 licitacionId, uint256 ofertaId) external view returns (uint256[] memory) {
         return _desgloses[licitacionId][ofertaId];
+    }
+
+    /// @notice Cuántos inspectores aprobaron una etapa y si `inspector` es uno de ellos.
+    function aprobacionesDeEtapa(uint256 licitacionId, uint256 etapa, address inspector)
+        external
+        view
+        returns (uint256 cantidad, bool aprobo)
+    {
+        return (_aprobaciones[licitacionId][etapa], _aprobo[licitacionId][etapa][inspector]);
     }
 
     function inspectores(uint256 licitacionId) external view returns (address[] memory) {
@@ -582,13 +622,12 @@ contract Licitaciones is ERC721, ReentrancyGuard {
         if (_organismoDe(msg.sender, ICredencialNFT.Rol.EMPLEADO) != organismoId) revert OtroOrganismo();
     }
 
-    function _validarEtapas(uint16[] calldata porcentajes) private pure {
-        if (porcentajes.length == 0 || porcentajes.length > MAX_ETAPAS) revert EtapasInvalidas();
-        uint256 suma;
-        for (uint256 i; i < porcentajes.length; i++) {
-            if (porcentajes[i] == 0) revert EtapasInvalidas();
-            suma += porcentajes[i];
+    /// @dev Entre 1 y MAX_ETAPAS etapas, ninguna en cero. Devuelve el total (el presupuesto oficial).
+    function _sumarEtapas(uint256[] calldata montos) private pure returns (uint256 suma) {
+        if (montos.length == 0 || montos.length > MAX_ETAPAS) revert EtapasInvalidas();
+        for (uint256 i; i < montos.length; i++) {
+            if (montos[i] == 0) revert EtapasInvalidas();
+            suma += montos[i];
         }
-        if (suma != BPS) revert EtapasInvalidas();
     }
 }

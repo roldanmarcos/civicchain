@@ -3,7 +3,7 @@ import "./web3.css";
 
 import { NETWORKS } from "./config/contracts.js";
 import { renderAdmin } from "./ui/admin.js";
-import { ETIQUETAS_ROL, acortar, html, mostrarToast, render } from "./ui/dom.js";
+import { ETIQUETAS_ROL, acortar, html, mostrarToast, nombreOrganismo, render } from "./ui/dom.js";
 import { licitacionAbierta, renderDetalle, renderEstadisticas, tarjetaLicitacion } from "./ui/licitaciones.js";
 import { renderMiCredencial } from "./ui/mi-credencial.js";
 import { cuandoSePublique, renderNuevaLicitacion } from "./ui/nueva-licitacion.js";
@@ -82,30 +82,60 @@ async function cargarLicitaciones() {
   renderTenders();
 }
 
+/**
+ * Lo que ve cada rol en los listados. Es solo de la interfaz: los datos son públicos en la blockchain.
+ * - Inspector: las obras en las que está asignado.
+ * - Empleado: las de su organismo (las que publicó él se marcan en la tarjeta).
+ * - Proveedor, admin y público: todas.
+ */
+function visiblesParaMiRol() {
+  const sesion = obtenerSesion();
+  const rol = rolActivo();
+  if (rol === "INSPECTOR") return licitaciones.filter((l) => l.inspectoresAsignados?.includes(sesion.cuenta.toLowerCase()));
+  if (rol === "EMPLEADO") return licitaciones.filter((l) => l.organismoId === sesion.credencial.organismoId);
+  return licitaciones;
+}
+
+/** Texto que explica el filtro por rol en la página de licitaciones. */
+function textoFiltroRol() {
+  const rol = rolActivo();
+  const organismo = obtenerSesion().credencial?.organismoId;
+  if (rol === "INSPECTOR") return "Ves solo las obras en las que estás asignado como inspector.";
+  if (rol === "EMPLEADO") return `Ves las licitaciones de ${nombreOrganismo(organismo)}. Las que publicaste vos están marcadas.`;
+  return "Explorá procesos de obra pública y seguí su avance, desde la publicación hasta la adjudicación.";
+}
+
 function renderTenders() {
-  const destacadas = [...licitaciones].sort((a, b) => Number(b.estado === "RECIBIENDO_OFERTAS") - Number(a.estado === "RECIBIENDO_OFERTAS")).slice(0, 3);
+  const visibles = visiblesParaMiRol();
+  const destacadas = [...visibles].sort((a, b) => Number(b.estado === "RECIBIENDO_OFERTAS") - Number(a.estado === "RECIBIENDO_OFERTAS")).slice(0, 3);
   render(
     document.getElementById("featured-tenders"),
     destacadas.length
       ? html`${destacadas.map(tarjetaLicitacion)}`
-      : html`<div class="empty-state"><span>▤</span><strong>Todavía no hay licitaciones publicadas</strong></div>`,
+      : html`<div class="empty-state"><span>▤</span><strong>${rolActivo() === "INSPECTOR" ? "Todavía no te asignaron ninguna obra" : "Todavía no hay licitaciones publicadas"}</strong></div>`,
   );
-  renderEstadisticas(licitaciones);
+  renderEstadisticas(visibles);
   const contador = document.getElementById("nav-count-licitaciones");
-  contador.textContent = String(licitaciones.length);
-  contador.classList.toggle("hidden", licitaciones.length === 0);
+  contador.textContent = String(visibles.length);
+  contador.classList.toggle("hidden", visibles.length === 0);
+  document.getElementById("tenders-intro").textContent = textoFiltroRol();
   filterTenders();
 }
 
 function filterTenders() {
   const query = (/** @type {HTMLInputElement} */ (document.getElementById("tender-search")).value || "").trim().toLocaleLowerCase("es");
   const status = /** @type {HTMLSelectElement} */ (document.getElementById("status-filter")).value || "all";
-  const matches = licitaciones.filter((l) => {
+  const visibles = visiblesParaMiRol();
+  const matches = visibles.filter((l) => {
     const texto = `${l.titulo} ${l.metadata?.ubicacion ?? ""} ${l.metadata?.description ?? ""} CC-${String(l.id).padStart(3, "0")}`.toLocaleLowerCase("es");
     return texto.includes(query) && (status === "all" || l.estado === status);
   });
   render(document.getElementById("all-tenders"), html`${matches.map(tarjetaLicitacion)}`);
-  document.getElementById("empty-state-texto").textContent = licitaciones.length ? "Probá con otro término o cambiá el filtro." : "Todavía no hay licitaciones publicadas.";
+  document.getElementById("empty-state-texto").textContent = visibles.length
+    ? "Probá con otro término o cambiá el filtro."
+    : rolActivo() === "INSPECTOR"
+      ? "Cuando un empleado de tu organismo te asigne a una obra, va a aparecer acá."
+      : "Todavía no hay licitaciones publicadas.";
   document.getElementById("empty-state").classList.toggle("hidden", matches.length > 0 || !cargadas);
 }
 
@@ -231,6 +261,8 @@ cuandoSePublique(async () => {
 });
 
 alCambiarSesion(actualizarInterfaz);
+// Al cambiar de cuenta o de rol cambia lo que se ve en los listados.
+alCambiarSesion(() => cargadas && renderTenders());
 // Eventos nuevos en los contratos: refrescar listados y el detalle abierto.
 alCambiarCadena(() => {
   cargarLicitaciones();

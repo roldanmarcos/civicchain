@@ -28,8 +28,9 @@ const Estado = {
 } as const;
 
 const HORA = 3600;
-const PRESUPUESTO = 48_500_000n;
-const ETAPAS = [3000, 4000, 3000]; // 30 %, 40 %, 30 %
+const ETAPAS = [14_550_000n, 19_400_000n, 14_550_000n]; // monto oficial de cada etapa, en pesos
+const PRESUPUESTO = 48_500_000n; // la suma de las etapas
+const INSPECTORES = 1; // inspectores que requiere la obra
 const SIN_DATOS = ethers.ZeroHash;
 const GWEI = 10n ** 9n;
 
@@ -64,13 +65,20 @@ async function desplegar() {
 
 type Base = Awaited<ReturnType<typeof desplegar>>;
 
+/** Un segundo inspector de Quilmes, para probar obras que requieren más de uno. */
+async function inspectorExtraDeQuilmes(base: Base) {
+  const extra = (await ethers.getSigners())[9];
+  await base.credenciales.emitirFuncionario(extra.address, Rol.INSPECTOR, QUILMES, "Laura Benítez", base.vence, SIN_DATOS);
+  return extra;
+}
+
 async function conLicitacion() {
   const base = await desplegar();
   const cierre = BigInt((await time.latest()) + 2 * HORA);
   const limite = cierre + BigInt(2 * HORA);
   await base.licitaciones
     .connect(base.empleado)
-    .crearLicitacion("Ampliación del Centro de Salud San Martín", "bafkreimetadata", PRESUPUESTO, cierre, limite, ETAPAS);
+    .crearLicitacion("Ampliación del Centro de Salud San Martín", "bafkreimetadata", cierre, limite, ETAPAS, INSPECTORES);
   return { ...base, licitacionId: 1n, cierre, limite };
 }
 
@@ -152,7 +160,7 @@ describe("Licitaciones", () => {
       const cierre = BigInt((await time.latest()) + 2 * HORA);
       const limite = cierre + BigInt(HORA);
 
-      await expect(licitaciones.connect(empleado).crearLicitacion("Pavimentación", "bafkreimeta", PRESUPUESTO, cierre, limite, ETAPAS))
+      await expect(licitaciones.connect(empleado).crearLicitacion("Pavimentación", "bafkreimeta", cierre, limite, ETAPAS, INSPECTORES))
         .to.emit(licitaciones, "LicitacionPublicada")
         .withArgs(1n, QUILMES, empleado.address, "Pavimentación", "bafkreimeta", PRESUPUESTO, cierre, limite);
 
@@ -161,7 +169,8 @@ describe("Licitaciones", () => {
       expect(await licitaciones.estado(1n)).to.equal(Estado.RECIBIENDO_OFERTAS);
       const l = await licitaciones.licitacion(1n);
       expect(l.organismoId).to.equal(BigInt(QUILMES));
-      expect(l.porcentajesEtapas.map(Number)).to.deep.equal(ETAPAS);
+      expect(l.montosEtapas).to.deep.equal(ETAPAS);
+      expect(l.presupuestoOficial).to.equal(PRESUPUESTO);
     });
 
     it("solo publican empleados con credencial vigente", async () => {
@@ -169,7 +178,7 @@ describe("Licitaciones", () => {
       const cierre = BigInt((await time.latest()) + 2 * HORA);
       for (const quien of [inspector, proveedor, otro]) {
         await expect(
-          licitaciones.connect(quien).crearLicitacion("X", "cid", PRESUPUESTO, cierre, cierre + 3600n, ETAPAS),
+          licitaciones.connect(quien).crearLicitacion("X", "cid", cierre, cierre + 3600n, ETAPAS, INSPECTORES),
         ).to.be.revertedWithCustomError(licitaciones, "SinRol");
       }
     });
@@ -180,14 +189,15 @@ describe("Licitaciones", () => {
       const limite = cierre + 3600n;
       const lic = licitaciones.connect(empleado);
       const err = (p: Promise<unknown>, nombre: string) => expect(p).to.be.revertedWithCustomError(licitaciones, nombre);
-      await err(lic.crearLicitacion("X", "cid", PRESUPUESTO, cierre, limite, [5000, 4000]), "EtapasInvalidas");
-      await err(lic.crearLicitacion("X", "cid", PRESUPUESTO, cierre, limite, []), "EtapasInvalidas");
-      await err(lic.crearLicitacion("X", "cid", PRESUPUESTO, cierre, limite, [10000, 0]), "EtapasInvalidas");
-      await err(lic.crearLicitacion("X", "cid", PRESUPUESTO, BigInt(await time.latest()), limite, ETAPAS), "FechaInvalida");
+      await err(lic.crearLicitacion("X", "cid", cierre, limite, [1n, 0n, 5n], INSPECTORES), "EtapasInvalidas");
+      await err(lic.crearLicitacion("X", "cid", cierre, limite, [], INSPECTORES), "EtapasInvalidas");
+      await err(lic.crearLicitacion("X", "cid", cierre, limite, [...Array(21)].map(() => 1n), INSPECTORES), "EtapasInvalidas");
+      await err(lic.crearLicitacion("X", "cid", BigInt(await time.latest()), limite, ETAPAS, INSPECTORES), "FechaInvalida");
       // La fecha límite tiene que dejar al menos 5 minutos para abrir y evaluar
-      await err(lic.crearLicitacion("X", "cid", PRESUPUESTO, cierre, cierre + 60n, ETAPAS), "FechaInvalida");
-      await err(lic.crearLicitacion("X", "cid", 0, cierre, limite, ETAPAS), "PresupuestoInvalido");
-      await err(lic.crearLicitacion("", "cid", PRESUPUESTO, cierre, limite, ETAPAS), "TextoInvalido");
+      await err(lic.crearLicitacion("X", "cid", cierre, cierre + 60n, ETAPAS, INSPECTORES), "FechaInvalida");
+      await err(lic.crearLicitacion("", "cid", cierre, limite, ETAPAS, INSPECTORES), "TextoInvalido");
+      await err(lic.crearLicitacion("X", "cid", cierre, limite, ETAPAS, 0), "InspectoresInvalidos");
+      await err(lic.crearLicitacion("X", "cid", cierre, limite, ETAPAS, 11), "InspectoresInvalidos");
     });
   });
 
@@ -224,7 +234,7 @@ describe("Licitaciones", () => {
     it("la misma empresa sí puede ofertar en otra licitación (otro scope, otro nullifier)", async () => {
       const base = await loadFixture(conOfertas);
       const cierre = BigInt((await time.latest()) + 2 * HORA);
-      await base.licitaciones.connect(base.empleado).crearLicitacion("Otra", "cid", PRESUPUESTO, cierre, cierre + 3600n, ETAPAS);
+      await base.licitaciones.connect(base.empleado).crearLicitacion("Otra", "cid", cierre, cierre + 3600n, ETAPAS, INSPECTORES);
       const o = await armarOferta(base, 2n, "sur", 40_000_000n);
       await enviar(base.licitaciones, 2n, o);
       expect(o.prueba.nullifier).to.not.equal(base.sur.prueba.nullifier);
@@ -553,6 +563,59 @@ describe("Licitaciones", () => {
       await expect(
         base.licitaciones.connect(base.inspector).registrarEvaluacion(base.licitacionId, 0n, true, "x"),
       ).to.be.revertedWithCustomError(base.licitaciones, "SinContratista");
+    });
+
+    it("no se asignan más inspectores que los que requiere la obra", async () => {
+      const base = await loadFixture(enEjecucion);
+      const otroDeQuilmes = await inspectorExtraDeQuilmes(base);
+      expect((await base.licitaciones.licitacion(base.licitacionId)).inspectoresRequeridos).to.equal(1n);
+      await expect(
+        base.licitaciones.connect(base.empleado).asignarInspector(base.licitacionId, otroDeQuilmes.address),
+      ).to.be.revertedWithCustomError(base.licitaciones, "CupoDeInspectoresCompleto");
+    });
+
+    it("con dos inspectores: hay que asignar a los dos y la etapa se paga cuando aprueban los dos", async () => {
+      const base = await loadFixture(desplegar);
+      const otroDeQuilmes = await inspectorExtraDeQuilmes(base);
+      const cierre = BigInt((await time.latest()) + 2 * HORA);
+      const limite = cierre + BigInt(2 * HORA);
+      await base.licitaciones.connect(base.empleado).crearLicitacion("Puente", "cid", cierre, limite, ETAPAS, 2);
+      const sur = await armarOferta(base, 1n, "sur", 40_000_000n);
+      await enviar(base.licitaciones, 1n, sur);
+      await time.increaseTo(cierre + 1n);
+      await base.licitaciones.connect(base.empleado).abrirSobres(1n, [sur.sobre]);
+      await base.licitaciones.connect(base.empleado).adjudicar(1n, 1n, "bafkreidictamen");
+      await base.licitaciones.connect(base.proveedor).revelarAutoria(1n, 1n, sur.sal2);
+      await base.licitaciones.connect(base.empleado).depositarFondos(1n, { value: sur.monto * GWEI });
+
+      await base.licitaciones.connect(base.empleado).asignarInspector(1n, base.inspector.address);
+      await expect(base.licitaciones.connect(base.inspector).registrarEvaluacion(1n, 0n, true, "ok"))
+        .to.be.revertedWithCustomError(base.licitaciones, "FaltanInspectores")
+        .withArgs(1n, 2n);
+
+      await base.licitaciones.connect(base.empleado).asignarInspector(1n, otroDeQuilmes.address);
+
+      // Aprueba el primero: queda registrada, pero la etapa no se da por aprobada ni se paga.
+      await expect(base.licitaciones.connect(base.inspector).registrarEvaluacion(1n, 0n, true, "ok")).to.not.emit(
+        base.licitaciones,
+        "PagoRealizado",
+      );
+      expect((await base.licitaciones.licitacion(1n)).etapasAprobadas).to.equal(0n);
+      expect(await base.licitaciones.aprobacionesDeEtapa(1n, 0n, base.inspector.address)).to.deep.equal([1n, true]);
+      await expect(base.licitaciones.connect(base.inspector).registrarEvaluacion(1n, 0n, true, "otra vez"))
+        .to.be.revertedWithCustomError(base.licitaciones, "YaAprobasteEstaEtapa");
+      await expect(base.licitaciones.connect(base.inspector).registrarEvaluacion(1n, 0n, false, "me arrepiento"))
+        .to.be.revertedWithCustomError(base.licitaciones, "YaAprobasteEstaEtapa");
+
+      // El segundo observa: no cambia nada. Cuando aprueba, la etapa queda aprobada y se paga.
+      await base.licitaciones.connect(otroDeQuilmes).registrarEvaluacion(1n, 0n, false, "falta el acta");
+      expect((await base.licitaciones.licitacion(1n)).etapasAprobadas).to.equal(0n);
+      await expect(base.licitaciones.connect(otroDeQuilmes).registrarEvaluacion(1n, 0n, true, "ok"))
+        .to.changeEtherBalance(ethers, base.proveedor, sur.desglose[0] * GWEI);
+      expect((await base.licitaciones.licitacion(1n)).etapasAprobadas).to.equal(1n);
+
+      // La etapa siguiente arranca de cero.
+      expect(await base.licitaciones.aprobacionesDeEtapa(1n, 1n, base.inspector.address)).to.deep.equal([0n, false]);
     });
   });
 });
