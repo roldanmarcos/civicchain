@@ -231,25 +231,3 @@ npx hardhat run scripts/deploy.ts --network sepolia
 
 El despliegue usa ~16,7M de gas. Después hay que mandarle ETH de prueba al relayer. Ojo: mandar ETH a una cuenta
 nueva cuesta más de 21.000 de gas en Sepolia, así que no hay que fijar el gas a mano.
-
-## Dudas y limitaciones (marcadas con `DUDA` / `LIMITACIÓN` en el código)
-
-- **Montos después del cierre**: con drand, desde el cierre cualquiera podría descifrar los sobres por su cuenta
-  (fuera de la dApp). Lo que se garantiza es que nadie los ve **antes** del cierre y que la publicación oficial es
-  una sola, de todos juntos, por el organismo. Si se quisiera que nadie los vea hasta que el organismo decide,
-  habría que cambiar drand por un comité de custodios (por ejemplo 3 de 5) que libere la clave en ese momento.
-- **Descartes en la apertura**: el contrato no puede comprobar por sí mismo que un sobre descartado era
-  indescifrable. Queda a la vista con "Verificar apertura", pero no hay un mecanismo de impugnación.
-- **Ganador con identidad inválida**: si el ganador cifró basura en su identidad, no se puede saber quién es y no
-  hay contratista. Hoy el organismo tendría que relicitar.
-- **Préstamo de autoría**: dos proveedores habilitados podrían ponerse de acuerdo para atribuirse la oferta del otro.
-  Evitarlo sin romper el anonimato requiere otra prueba ZK al revelar.
-- **Plazos cortos para la demo**: mínimo 5 minutos entre cierre y fecha límite; en producción serían días o semanas.
-- **Raíces viejas de Semaphore**: 5 minutos por defecto; el admin lo cambia con `configurarDuracionRaiz` (con 0 un
-  proveedor revocado queda afuera en el acto, a costa de que una prueba en vuelo justo en un cambio de grupo falle).
-- **Escrow en ETH**: escala ficticia 1 peso = 1 gwei. En producción se pagaría con un token en pesos. Si la wallet
-  del contratista rechazara ETH (un contrato), no se podría registrar la evaluación; con wallets comunes no pasa.
-- **Inscripciones sin camino de excepción**: una empresa que AFIP todavía no lista queda rechazada.
-- **Producción**: base gestionada en lugar de SQLite, *pinning* real en IPFS (Pinata/Storacha), RPC propio para
-  Sepolia, el relayer ve la IP de quien oferta, artefactos ZK servidos por nosotros en lugar del CDN de Semaphore,
-  wallets que no firman de forma determinística (hardware/multisig).
