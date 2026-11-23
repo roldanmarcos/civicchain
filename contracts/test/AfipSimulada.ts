@@ -5,10 +5,10 @@ import {
   crearClienteAfip,
   cuitValido,
   normalizarNombre,
-} from "../../frontend/src/services/afip/afip.js";
+} from "../../backend/src/afip/afip.js";
 
 const padron = JSON.parse(
-  await readFile(new URL("../../frontend/src/services/afip/padron.json", import.meta.url), "utf8"),
+  await readFile(new URL("../../backend/src/afip/padron.json", import.meta.url), "utf8"),
 );
 const afip = crearClienteAfip(padron);
 
@@ -70,6 +70,19 @@ describe("AFIP simulada", () => {
       const r = await afip.verificarSolicitud({ cuit: "30719998883", razonSocial: "Electro Sur S.R.L." });
       expect(r.resultado).to.equal(RESULTADOS.RAZON_SOCIAL_NO_COINCIDE);
       expect(r.mensaje).to.contain("ELECTRO CONURBANO S.R.L.");
+    });
+  });
+
+  describe("representación (clave fiscal simulada)", () => {
+    it("rechaza si la clave fiscal no corresponde al CUIT", async () => {
+      const v = await afip.verificarSolicitud({ cuit: "30-71234567-1", razonSocial: "Construcciones del Sur S.A.", claveFiscal: "otra" });
+      expect(v.ok).to.equal(false);
+      expect(v.resultado).to.equal(RESULTADOS.REPRESENTACION_NO_VERIFICADA);
+    });
+
+    it("aprueba con la clave fiscal correcta", async () => {
+      const v = await afip.verificarSolicitud({ cuit: "30-71234567-1", razonSocial: "Construcciones del Sur S.A.", claveFiscal: "DEMO-7123" });
+      expect(v.ok).to.equal(true);
     });
   });
 });

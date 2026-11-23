@@ -1,4 +1,4 @@
-import { comoTask, conectarCredenciales } from "../scripts/lib/credenciales.js";
+import { ROLES, comoTask, conectarCredenciales, siblingsDelProveedor } from "../scripts/lib/credenciales.js";
 
 interface Args {
   wallet: string;
@@ -14,7 +14,17 @@ export default comoTask<Args>(async (args, hre) => {
   const [tokenId] = await credenciales.credencialDe(args.wallet);
   if (tokenId === 0n) throw new Error(`La wallet ${args.wallet} no tiene credenciales.`);
 
-  const tx = await credenciales.revocar(tokenId, args.motivo);
+  // Los proveedores además salen del grupo de Semaphore (hace falta la prueba de Merkle).
+  const datos = await credenciales.credencial(tokenId);
+  const [commitment, enGrupo] = await credenciales.compromisoDe(tokenId);
+  const tx =
+    ROLES[Number(datos.rol)] === "PROVEEDOR"
+      ? await credenciales.revocarProveedor(
+          tokenId,
+          args.motivo,
+          enGrupo ? await siblingsDelProveedor(ethers, credenciales, commitment) : [],
+        )
+      : await credenciales.revocar(tokenId, args.motivo);
   await tx.wait();
   console.log(`Credencial #${tokenId} de ${args.wallet} revocada. Transacción: ${tx.hash}`);
 });

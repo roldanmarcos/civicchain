@@ -1,48 +1,51 @@
 import { expect } from "chai";
 import { network } from "hardhat";
+import {
+  BERAZATEGUI,
+  CUIT_DV_INCORRECTO,
+  CUIT_NORTE,
+  CUIT_SUR,
+  DIA,
+  GrupoLocal,
+  QUILMES,
+  Rol,
+  VIGENCIA,
+  autorizarInscripcion,
+  desplegarCredenciales,
+  identidad,
+  protocolo,
+} from "./lib/fixtures.js";
 
 const { ethers, networkHelpers } = await network.create();
 const { loadFixture, time } = networkHelpers;
 
-// Deben coincidir con el orden de los enums en el contrato
-const Rol = { PROVEEDOR: 0, EMPLEADO: 1, INSPECTOR: 2 } as const;
-const Estado = { PENDIENTE: 0, APROBADA: 1, RECHAZADA: 2, CANCELADA: 3 } as const;
-
-const DIA = 24 * 60 * 60;
-const VIGENCIA = 90 * DIA;
-const QUILMES = 1;
-const BERAZATEGUI = 2;
-
-// CUITs con dígito verificador correcto
-const CUIT_SUR = 30712345671n;
-const CUIT_NORTE = 30709876542n;
-const CUIT_DV_INCORRECTO = 30712345678n;
+const SIN_DATOS = ethers.ZeroHash;
+const HASH_ANA = protocolo.datosHash({ dni: "30111222", resolucion: "Res. 12/2026" }, protocolo.nuevaSal());
 
 async function desplegar() {
-  const [admin, empleado, inspector, proveedor, otro] = await ethers.getSigners();
-  const credenciales = await ethers.deployContract("CredencialNFT", [admin.address]);
-  const vence = BigInt((await time.latest()) + VIGENCIA);
-  return { credenciales, admin, empleado, inspector, proveedor, otro, vence };
+  return desplegarCredenciales(ethers);
 }
 
 async function conEmpleado() {
   const base = await desplegar();
-  await base.credenciales.emitirFuncionario(base.empleado.address, Rol.EMPLEADO, QUILMES, "Ana Pérez", base.vence);
+  await base.credenciales.emitirFuncionario(base.empleado.address, Rol.EMPLEADO, QUILMES, "Ana Pérez", base.vence, HASH_ANA);
   return { ...base, tokenId: 1n };
-}
-
-async function conSolicitud() {
-  const base = await desplegar();
-  await base.credenciales
-    .connect(base.proveedor)
-    .solicitarInscripcion(CUIT_SUR, "Construcciones del Sur S.A.", "Av. Calchaquí 123, Quilmes", "Construcción");
-  return { ...base, solicitudId: 1n };
 }
 
 async function conProveedor() {
-  const base = await conSolicitud();
-  await base.credenciales.aprobarSolicitud(base.solicitudId, base.vence);
-  return { ...base, tokenId: 1n };
+  const base = await desplegar();
+  const id = identidad("construcciones-del-sur");
+  // Función y no objeto: loadFixture restaura la cadena pero no los objetos de JS entre tests.
+  const grupo = () => {
+    const g = new GrupoLocal();
+    g.agregar(id.commitment);
+    return g;
+  };
+  const { datos, firma } = await autorizarInscripcion(ethers, base.credenciales, base.verificador, base.proveedor.address, {
+    identityCommitment: id.commitment,
+  });
+  await base.credenciales.connect(base.proveedor).inscribirProveedor(datos, firma);
+  return { ...base, tokenId: 1n, id, grupo, datos };
 }
 
 describe("CredencialNFT", () => {
@@ -54,8 +57,16 @@ describe("CredencialNFT", () => {
     });
 
     it("no acepta la dirección cero como admin", async () => {
+      const { semaphore } = await loadFixture(desplegar);
       const fabrica = await ethers.getContractFactory("CredencialNFT");
-      await expect(fabrica.deploy(ethers.ZeroAddress)).to.be.revertedWithCustomError(fabrica, "WalletInvalida");
+      await expect(fabrica.deploy(ethers.ZeroAddress, await semaphore.getAddress())).to.be.revertedWithCustomError(
+        fabrica,
+        "WalletInvalida",
+      );
+      await expect(fabrica.deploy((await ethers.getSigners())[0].address, ethers.ZeroAddress)).to.be.revertedWithCustomError(
+        fabrica,
+        "WalletInvalida",
+      );
     });
 
     it("declara soporte para ERC-721 y ERC-5192", async () => {
@@ -69,9 +80,9 @@ describe("CredencialNFT", () => {
     it("emite la credencial y guarda sus datos", async () => {
       const { credenciales, empleado, vence } = await loadFixture(desplegar);
 
-      await expect(credenciales.emitirFuncionario(empleado.address, Rol.EMPLEADO, QUILMES, "Ana Pérez", vence))
+      await expect(credenciales.emitirFuncionario(empleado.address, Rol.EMPLEADO, QUILMES, "Ana Pérez", vence, HASH_ANA))
         .to.emit(credenciales, "CredencialEmitida")
-        .withArgs(1n, empleado.address, Rol.EMPLEADO, QUILMES, 0n, "Ana Pérez", vence)
+        .withArgs(1n, empleado.address, Rol.EMPLEADO, QUILMES, 0n, "Ana Pérez", vence, HASH_ANA)
         .and.to.emit(credenciales, "Locked")
         .withArgs(1n);
 
@@ -86,6 +97,7 @@ describe("CredencialNFT", () => {
       expect(c.cuit).to.equal(0n);
       expect(c.validaHasta).to.equal(vence);
       expect(c.revocada).to.equal(false);
+      expect(c.datosHash).to.equal(HASH_ANA);
 
       expect(await credenciales.tieneRolActivo(empleado.address, Rol.EMPLEADO)).to.equal(true);
       expect(await credenciales.organismoDe(empleado.address, Rol.EMPLEADO)).to.equal(BigInt(QUILMES));
@@ -93,21 +105,21 @@ describe("CredencialNFT", () => {
 
     it("emite credenciales de inspector", async () => {
       const { credenciales, inspector, vence } = await loadFixture(desplegar);
-      await credenciales.emitirFuncionario(inspector.address, Rol.INSPECTOR, BERAZATEGUI, "Luis Gómez", vence);
+      await credenciales.emitirFuncionario(inspector.address, Rol.INSPECTOR, BERAZATEGUI, "Luis Gómez", vence, SIN_DATOS);
       expect(await credenciales.tieneRolActivo(inspector.address, Rol.INSPECTOR)).to.equal(true);
     });
 
-    it("no emite credenciales de proveedor (esas van por solicitud)", async () => {
+    it("no emite credenciales de proveedor (esas se inscriben con la firma del verificador)", async () => {
       const { credenciales, proveedor, vence } = await loadFixture(desplegar);
       await expect(
-        credenciales.emitirFuncionario(proveedor.address, Rol.PROVEEDOR, QUILMES, "X", vence),
+        credenciales.emitirFuncionario(proveedor.address, Rol.PROVEEDOR, QUILMES, "X", vence, SIN_DATOS),
       ).to.be.revertedWithCustomError(credenciales, "RolInvalido");
     });
 
     it("solo ADMIN_ROLE puede emitir", async () => {
       const { credenciales, empleado, otro, vence } = await loadFixture(desplegar);
       await expect(
-        credenciales.connect(otro).emitirFuncionario(empleado.address, Rol.EMPLEADO, QUILMES, "Ana Pérez", vence),
+        credenciales.connect(otro).emitirFuncionario(empleado.address, Rol.EMPLEADO, QUILMES, "Ana Pérez", vence, SIN_DATOS),
       )
         .to.be.revertedWithCustomError(credenciales, "AccessControlUnauthorizedAccount")
         .withArgs(otro.address, await credenciales.ADMIN_ROLE());
@@ -118,26 +130,26 @@ describe("CredencialNFT", () => {
       const ahora = BigInt(await time.latest());
 
       await expect(
-        credenciales.emitirFuncionario(ethers.ZeroAddress, Rol.EMPLEADO, QUILMES, "Ana", vence),
+        credenciales.emitirFuncionario(ethers.ZeroAddress, Rol.EMPLEADO, QUILMES, "Ana", vence, SIN_DATOS),
       ).to.be.revertedWithCustomError(credenciales, "WalletInvalida");
       await expect(
-        credenciales.emitirFuncionario(empleado.address, Rol.EMPLEADO, 0, "Ana", vence),
+        credenciales.emitirFuncionario(empleado.address, Rol.EMPLEADO, 0, "Ana", vence, SIN_DATOS),
       ).to.be.revertedWithCustomError(credenciales, "OrganismoInvalido");
       await expect(
-        credenciales.emitirFuncionario(empleado.address, Rol.EMPLEADO, QUILMES, "", vence),
+        credenciales.emitirFuncionario(empleado.address, Rol.EMPLEADO, QUILMES, "", vence, SIN_DATOS),
       ).to.be.revertedWithCustomError(credenciales, "TextoInvalido");
       await expect(
-        credenciales.emitirFuncionario(empleado.address, Rol.EMPLEADO, QUILMES, "x".repeat(121), vence),
+        credenciales.emitirFuncionario(empleado.address, Rol.EMPLEADO, QUILMES, "x".repeat(121), vence, SIN_DATOS),
       ).to.be.revertedWithCustomError(credenciales, "TextoInvalido");
       await expect(
-        credenciales.emitirFuncionario(empleado.address, Rol.EMPLEADO, QUILMES, "Ana", ahora),
+        credenciales.emitirFuncionario(empleado.address, Rol.EMPLEADO, QUILMES, "Ana", ahora, SIN_DATOS),
       ).to.be.revertedWithCustomError(credenciales, "FechaInvalida");
     });
 
     it("no emite una segunda credencial a una wallet que ya tiene una, aunque sea de otro rol", async () => {
       const { credenciales, empleado, vence, tokenId } = await loadFixture(conEmpleado);
       await expect(
-        credenciales.emitirFuncionario(empleado.address, Rol.INSPECTOR, QUILMES, "Ana Pérez", vence),
+        credenciales.emitirFuncionario(empleado.address, Rol.INSPECTOR, QUILMES, "Ana Pérez", vence, SIN_DATOS),
       )
         .to.be.revertedWithCustomError(credenciales, "WalletConCredencial")
         .withArgs(tokenId);
@@ -149,7 +161,7 @@ describe("CredencialNFT", () => {
       const nuevaFecha = BigInt((await time.latest()) + VIGENCIA);
 
       await expect(
-        credenciales.emitirFuncionario(empleado.address, Rol.EMPLEADO, QUILMES, "Ana Pérez", nuevaFecha),
+        credenciales.emitirFuncionario(empleado.address, Rol.EMPLEADO, QUILMES, "Ana Pérez", nuevaFecha, SIN_DATOS),
       )
         .to.be.revertedWithCustomError(credenciales, "WalletConCredencial")
         .withArgs(tokenId);
@@ -159,7 +171,7 @@ describe("CredencialNFT", () => {
       const { credenciales, empleado, vence, tokenId } = await loadFixture(conEmpleado);
       await credenciales.revocar(tokenId, "Cambio de rol");
 
-      await credenciales.emitirFuncionario(empleado.address, Rol.INSPECTOR, QUILMES, "Ana Pérez", vence);
+      await credenciales.emitirFuncionario(empleado.address, Rol.INSPECTOR, QUILMES, "Ana Pérez", vence, SIN_DATOS);
 
       const [actual, datos] = await credenciales.credencialDe(empleado.address);
       expect(actual).to.equal(2n);
@@ -188,189 +200,176 @@ describe("CredencialNFT", () => {
     });
   });
 
-  describe("solicitudes de proveedores", () => {
-    it("cualquier wallet puede solicitar y queda pendiente", async () => {
-      const { credenciales, proveedor } = await loadFixture(desplegar);
+  describe("inscripción de proveedores (firma del verificador)", () => {
+    it("emite la credencial y agrega el compromiso al grupo de Semaphore", async () => {
+      const { credenciales, semaphore, grupoId, verificador, proveedor } = await loadFixture(desplegar);
+      const id = identidad("sur");
+      const { datos, firma } = await autorizarInscripcion(ethers, credenciales, verificador, proveedor.address, {
+        identityCommitment: id.commitment,
+      });
 
-      await expect(
-        credenciales
-          .connect(proveedor)
-          .solicitarInscripcion(CUIT_SUR, "Construcciones del Sur S.A.", "Av. Calchaquí 123, Quilmes", "Construcción"),
-      )
-        .to.emit(credenciales, "SolicitudCreada")
-        .withArgs(1n, proveedor.address, CUIT_SUR, "Construcciones del Sur S.A.", "Av. Calchaquí 123, Quilmes", "Construcción");
+      await expect(credenciales.connect(proveedor).inscribirProveedor(datos, firma))
+        .to.emit(credenciales, "CredencialEmitida")
+        .withArgs(1n, proveedor.address, Rol.PROVEEDOR, 0, CUIT_SUR, datos.razonSocial, datos.validaHasta, datos.datosHash)
+        .and.to.emit(credenciales, "ProveedorAgregadoAlGrupo")
+        .withArgs(1n, id.commitment);
 
-      const s = await credenciales.solicitud(1n);
-      expect(s.wallet).to.equal(proveedor.address);
-      expect(s.cuit).to.equal(CUIT_SUR);
-      expect(s.razonSocial).to.equal("Construcciones del Sur S.A.");
-      expect(s.estado).to.equal(BigInt(Estado.PENDIENTE));
-      expect(await credenciales.solicitudPendienteDe(proveedor.address)).to.equal(1n);
-      expect(await credenciales.totalSolicitudes()).to.equal(1n);
-      // Solicitar no da credencial
-      expect(await credenciales.tieneRolActivo(proveedor.address, Rol.PROVEEDOR)).to.equal(false);
+      expect(await credenciales.tieneRolActivo(proveedor.address, Rol.PROVEEDOR)).to.equal(true);
+      expect(await semaphore.hasMember(grupoId, id.commitment)).to.equal(true);
+      const [commitment, enGrupo] = await credenciales.compromisoDe(1n);
+      expect(commitment).to.equal(id.commitment);
+      expect(enGrupo).to.equal(true);
+      const c = await credenciales.credencial(1n);
+      expect(c.cuit).to.equal(CUIT_SUR);
+      expect(c.datosHash).to.equal(datos.datosHash);
     });
 
-    it("valida CUIT y textos", async () => {
-      const { credenciales, proveedor } = await loadFixture(desplegar);
-      const p = credenciales.connect(proveedor);
+    it("rechaza firmas de cuentas sin VERIFICADOR_ROLE", async () => {
+      const { credenciales, otro, proveedor } = await loadFixture(desplegar);
+      const { datos, firma } = await autorizarInscripcion(ethers, credenciales, otro, proveedor.address, {
+        identityCommitment: identidad("x").commitment,
+      });
+      await expect(credenciales.connect(proveedor).inscribirProveedor(datos, firma)).to.be.revertedWithCustomError(
+        credenciales,
+        "FirmaInvalida",
+      );
+    });
 
-      await expect(p.solicitarInscripcion(CUIT_DV_INCORRECTO, "Empresa", "Domicilio", "Rubro"))
+    it("la firma no sirve para otra wallet ni con otros datos", async () => {
+      const { credenciales, verificador, proveedor, otro } = await loadFixture(desplegar);
+      const { datos, firma } = await autorizarInscripcion(ethers, credenciales, verificador, proveedor.address, {
+        identityCommitment: identidad("x").commitment,
+      });
+      await expect(credenciales.connect(otro).inscribirProveedor(datos, firma)).to.be.revertedWithCustomError(
+        credenciales,
+        "FirmaInvalida",
+      );
+      await expect(
+        credenciales.connect(proveedor).inscribirProveedor({ ...datos, razonSocial: "Otra S.A." }, firma),
+      ).to.be.revertedWithCustomError(credenciales, "FirmaInvalida");
+      await expect(
+        credenciales.connect(proveedor).inscribirProveedor({ ...datos, identityCommitment: 123n }, firma),
+      ).to.be.revertedWithCustomError(credenciales, "FirmaInvalida");
+    });
+
+    it("rechaza autorizaciones vencidas y CUITs inválidos", async () => {
+      const { credenciales, verificador, proveedor } = await loadFixture(desplegar);
+      const vencida = await autorizarInscripcion(ethers, credenciales, verificador, proveedor.address, {
+        identityCommitment: identidad("x").commitment,
+      });
+      await time.increase(2 * 3600);
+      await expect(
+        credenciales.connect(proveedor).inscribirProveedor(vencida.datos, vencida.firma),
+      ).to.be.revertedWithCustomError(credenciales, "FirmaVencida");
+
+      const malCuit = await autorizarInscripcion(ethers, credenciales, verificador, proveedor.address, {
+        identityCommitment: identidad("x").commitment,
+        cuit: CUIT_DV_INCORRECTO,
+      });
+      await expect(credenciales.connect(proveedor).inscribirProveedor(malCuit.datos, malCuit.firma))
         .to.be.revertedWithCustomError(credenciales, "CuitInvalido")
         .withArgs(CUIT_DV_INCORRECTO);
-      await expect(p.solicitarInscripcion(CUIT_SUR, "", "Domicilio", "Rubro")).to.be.revertedWithCustomError(
-        credenciales,
-        "TextoInvalido",
-      );
-      await expect(p.solicitarInscripcion(CUIT_SUR, "Empresa", "", "Rubro")).to.be.revertedWithCustomError(
-        credenciales,
-        "TextoInvalido",
-      );
-      await expect(
-        p.solicitarInscripcion(CUIT_SUR, "Empresa", "Domicilio", "x".repeat(241)),
-      ).to.be.revertedWithCustomError(credenciales, "TextoInvalido");
     });
 
-    it("una wallet no puede tener dos solicitudes pendientes", async () => {
-      const { credenciales, proveedor } = await loadFixture(conSolicitud);
-      await expect(
-        credenciales.connect(proveedor).solicitarInscripcion(CUIT_NORTE, "Otra S.A.", "Domicilio", "Rubro"),
-      )
-        .to.be.revertedWithCustomError(credenciales, "SolicitudPendienteExistente")
+    it("una autorización se usa una sola vez", async () => {
+      const { credenciales, verificador, proveedor, tokenId, datos, id, grupo } = await loadFixture(conProveedor);
+      await credenciales.revocarProveedor(tokenId, "Prueba", grupo().quitar(id.commitment));
+      const misma = await autorizarInscripcion(ethers, credenciales, verificador, proveedor.address, datos);
+      await expect(credenciales.connect(proveedor).inscribirProveedor(misma.datos, misma.firma)).to.be.revertedWithCustomError(
+        credenciales,
+        "FirmaYaUsada",
+      );
+    });
+
+    it("no inscribe un CUIT que ya tiene credencial vigente, ni una wallet con credencial", async () => {
+      const { credenciales, verificador, proveedor, otro } = await loadFixture(conProveedor);
+      const mismoCuit = await autorizarInscripcion(ethers, credenciales, verificador, otro.address, {
+        identityCommitment: identidad("otro").commitment,
+      });
+      await expect(credenciales.connect(otro).inscribirProveedor(mismoCuit.datos, mismoCuit.firma))
+        .to.be.revertedWithCustomError(credenciales, "CuitConCredencial")
+        .withArgs(1n);
+
+      const mismaWallet = await autorizarInscripcion(ethers, credenciales, verificador, proveedor.address, {
+        identityCommitment: identidad("otro").commitment,
+        cuit: CUIT_NORTE,
+      });
+      await expect(credenciales.connect(proveedor).inscribirProveedor(mismaWallet.datos, mismaWallet.firma))
+        .to.be.revertedWithCustomError(credenciales, "WalletConCredencial")
         .withArgs(1n);
     });
 
-    it("dos wallets pueden pedir el mismo CUIT (el admin decide cuál es legítima)", async () => {
-      const { credenciales, otro } = await loadFixture(conSolicitud);
-      await credenciales.connect(otro).solicitarInscripcion(CUIT_SUR, "Construcciones del Sur S.A.", "Dom", "Rubro");
-      expect(await credenciales.solicitudPendienteDe(otro.address)).to.equal(2n);
+    it("no acepta un compromiso de identidad que ya está en el grupo", async () => {
+      const { credenciales, verificador, otro, datos } = await loadFixture(conProveedor);
+      const repetido = await autorizarInscripcion(ethers, credenciales, verificador, otro.address, {
+        identityCommitment: datos.identityCommitment,
+        cuit: CUIT_NORTE,
+      });
+      await expect(credenciales.connect(otro).inscribirProveedor(repetido.datos, repetido.firma)).to.revert(ethers);
     });
 
-    it("no puede solicitar una wallet que ya tiene credencial", async () => {
-      const { credenciales, empleado, tokenId } = await loadFixture(conEmpleado);
-      await expect(
-        credenciales.connect(empleado).solicitarInscripcion(CUIT_SUR, "Empresa", "Domicilio", "Rubro"),
-      )
-        .to.be.revertedWithCustomError(credenciales, "WalletConCredencial")
-        .withArgs(tokenId);
-    });
+    it("revocarProveedor saca al proveedor del grupo y libera el CUIT", async () => {
+      const { credenciales, semaphore, grupoId, verificador, otro, tokenId, id, grupo } = await loadFixture(conProveedor);
 
-    it("no se puede solicitar un CUIT que ya tiene credencial vigente", async () => {
-      const { credenciales, otro, tokenId } = await loadFixture(conProveedor);
-      await expect(
-        credenciales.connect(otro).solicitarInscripcion(CUIT_SUR, "Construcciones del Sur S.A.", "Dom", "Rubro"),
-      )
-        .to.be.revertedWithCustomError(credenciales, "CuitConCredencial")
-        .withArgs(tokenId);
-    });
+      await expect(credenciales.revocarProveedor(tokenId, "Wallet comprometida", grupo().quitar(id.commitment)))
+        .to.emit(credenciales, "ProveedorQuitadoDelGrupo")
+        .withArgs(tokenId, id.commitment);
+      expect(await semaphore.hasMember(grupoId, id.commitment)).to.equal(false);
+      expect((await credenciales.compromisoDe(tokenId))[1]).to.equal(false);
 
-    describe("aprobar", () => {
-      it("emite la credencial de proveedor con el CUIT y la razón social", async () => {
-        const { credenciales, proveedor, vence, solicitudId } = await loadFixture(conSolicitud);
-
-        await expect(credenciales.aprobarSolicitud(solicitudId, vence))
-          .to.emit(credenciales, "SolicitudAprobada")
-          .withArgs(solicitudId, 1n)
-          .and.to.emit(credenciales, "CredencialEmitida")
-          .withArgs(1n, proveedor.address, Rol.PROVEEDOR, 0n, CUIT_SUR, "Construcciones del Sur S.A.", vence);
-
-        expect(await credenciales.tieneRolActivo(proveedor.address, Rol.PROVEEDOR)).to.equal(true);
-        expect((await credenciales.solicitud(solicitudId)).estado).to.equal(BigInt(Estado.APROBADA));
-        expect(await credenciales.solicitudPendienteDe(proveedor.address)).to.equal(0n);
-
-        const [tokenId, datos] = await credenciales.credencialDeCuit(CUIT_SUR);
-        expect(tokenId).to.equal(1n);
-        expect(datos.nombre).to.equal("Construcciones del Sur S.A.");
-        expect(datos.organismoId).to.equal(0n);
+      // La misma empresa se vuelve a inscribir con otra wallet y otra identidad
+      const nueva = await autorizarInscripcion(ethers, credenciales, verificador, otro.address, {
+        identityCommitment: identidad("sur-nueva").commitment,
       });
-
-      it("solo ADMIN_ROLE puede aprobar", async () => {
-        const { credenciales, proveedor, vence, solicitudId } = await loadFixture(conSolicitud);
-        await expect(
-          credenciales.connect(proveedor).aprobarSolicitud(solicitudId, vence),
-        ).to.be.revertedWithCustomError(credenciales, "AccessControlUnauthorizedAccount");
-      });
-
-      it("no aprueba solicitudes inexistentes ni ya resueltas", async () => {
-        const { credenciales, vence, solicitudId } = await loadFixture(conProveedor);
-        await expect(credenciales.aprobarSolicitud(99n, vence))
-          .to.be.revertedWithCustomError(credenciales, "SolicitudInexistente")
-          .withArgs(99n);
-        await expect(credenciales.aprobarSolicitud(solicitudId, vence))
-          .to.be.revertedWithCustomError(credenciales, "SolicitudNoPendiente")
-          .withArgs(solicitudId);
-      });
-
-      it("si dos wallets pidieron el mismo CUIT, solo se puede aprobar una", async () => {
-        const { credenciales, otro, vence, solicitudId } = await loadFixture(conSolicitud);
-        await credenciales.connect(otro).solicitarInscripcion(CUIT_SUR, "Construcciones del Sur S.A.", "Dom", "Rubro");
-        await credenciales.aprobarSolicitud(solicitudId, vence);
-
-        await expect(credenciales.aprobarSolicitud(2n, vence))
-          .to.be.revertedWithCustomError(credenciales, "CuitConCredencial")
-          .withArgs(1n);
-      });
-    });
-
-    describe("rechazar y cancelar", () => {
-      it("el admin rechaza con motivo y el proveedor puede volver a solicitar", async () => {
-        const { credenciales, proveedor, solicitudId } = await loadFixture(conSolicitud);
-
-        await expect(credenciales.rechazarSolicitud(solicitudId, "La razón social no coincide con AFIP"))
-          .to.emit(credenciales, "SolicitudRechazada")
-          .withArgs(solicitudId, "La razón social no coincide con AFIP");
-
-        expect((await credenciales.solicitud(solicitudId)).estado).to.equal(BigInt(Estado.RECHAZADA));
-        expect(await credenciales.solicitudPendienteDe(proveedor.address)).to.equal(0n);
-
-        await credenciales.connect(proveedor).solicitarInscripcion(CUIT_SUR, "Construcciones del Sur S.A.", "Dom", "Rubro");
-        expect(await credenciales.solicitudPendienteDe(proveedor.address)).to.equal(2n);
-      });
-
-      it("rechazar exige motivo y ADMIN_ROLE", async () => {
-        const { credenciales, proveedor, solicitudId } = await loadFixture(conSolicitud);
-        await expect(credenciales.rechazarSolicitud(solicitudId, "")).to.be.revertedWithCustomError(
-          credenciales,
-          "MotivoVacio",
-        );
-        await expect(
-          credenciales.connect(proveedor).rechazarSolicitud(solicitudId, "Motivo"),
-        ).to.be.revertedWithCustomError(credenciales, "AccessControlUnauthorizedAccount");
-      });
-
-      it("el proveedor cancela su propia solicitud, pero no la de otro", async () => {
-        const { credenciales, proveedor, otro, solicitudId } = await loadFixture(conSolicitud);
-
-        await expect(credenciales.connect(otro).cancelarSolicitud(solicitudId))
-          .to.be.revertedWithCustomError(credenciales, "NoEsTuSolicitud")
-          .withArgs(solicitudId);
-
-        await expect(credenciales.connect(proveedor).cancelarSolicitud(solicitudId))
-          .to.emit(credenciales, "SolicitudCancelada")
-          .withArgs(solicitudId);
-        expect((await credenciales.solicitud(solicitudId)).estado).to.equal(BigInt(Estado.CANCELADA));
-        expect(await credenciales.solicitudPendienteDe(proveedor.address)).to.equal(0n);
-      });
-
-      it("no se puede aprobar una solicitud cancelada", async () => {
-        const { credenciales, proveedor, vence, solicitudId } = await loadFixture(conSolicitud);
-        await credenciales.connect(proveedor).cancelarSolicitud(solicitudId);
-        await expect(credenciales.aprobarSolicitud(solicitudId, vence))
-          .to.be.revertedWithCustomError(credenciales, "SolicitudNoPendiente")
-          .withArgs(solicitudId);
-      });
-    });
-
-    it("al revocar un proveedor, su CUIT queda libre para inscribirse de nuevo", async () => {
-      const { credenciales, otro, vence, tokenId } = await loadFixture(conProveedor);
-      await credenciales.revocar(tokenId, "Wallet comprometida");
-
-      await credenciales.connect(otro).solicitarInscripcion(CUIT_SUR, "Construcciones del Sur S.A.", "Dom", "Rubro");
-      await credenciales.aprobarSolicitud(2n, vence);
-
-      expect(await credenciales.tieneRolActivo(otro.address, Rol.PROVEEDOR)).to.equal(true);
+      await credenciales.connect(otro).inscribirProveedor(nueva.datos, nueva.firma);
       const [actual] = await credenciales.credencialDeCuit(CUIT_SUR);
       expect(actual).to.equal(2n);
+    });
+
+    it("revocar (sin siblings) no se puede usar con proveedores que están en el grupo", async () => {
+      const { credenciales, tokenId } = await loadFixture(conProveedor);
+      await expect(credenciales.revocar(tokenId, "Baja"))
+        .to.be.revertedWithCustomError(credenciales, "UsarRevocarProveedor")
+        .withArgs(tokenId);
+    });
+
+    it("solo el admin cambia la duración de las raíces viejas del grupo", async () => {
+      const { credenciales, semaphore, grupoId, otro } = await loadFixture(desplegar);
+      await expect(credenciales.connect(otro).configurarDuracionRaiz(0)).to.be.revertedWithCustomError(
+        credenciales,
+        "AccessControlUnauthorizedAccount",
+      );
+      await expect(credenciales.configurarDuracionRaiz(60))
+        .to.emit(credenciales, "DuracionRaizCambiada")
+        .withArgs(60n)
+        .and.to.emit(semaphore, "GroupMerkleTreeDurationUpdated")
+        .withArgs(grupoId, 300n, 60n);
+    });
+
+    it("revocarProveedor solo acepta proveedores", async () => {
+      const { credenciales, tokenId } = await loadFixture(conEmpleado);
+      await expect(credenciales.revocarProveedor(tokenId, "Baja", []))
+        .to.be.revertedWithCustomError(credenciales, "NoEsProveedor")
+        .withArgs(tokenId);
+    });
+
+    it("cualquiera puede sacar del grupo a un proveedor vencido, y después no se puede renovar", async () => {
+      const { credenciales, otro, tokenId, id, grupo, datos } = await loadFixture(conProveedor);
+      const siblings = grupo().quitar(id.commitment);
+      await expect(credenciales.connect(otro).quitarVencidoDelGrupo(tokenId, siblings))
+        .to.be.revertedWithCustomError(credenciales, "CredencialNoVencida")
+        .withArgs(tokenId);
+
+      await time.increaseTo(datos.validaHasta + 1n);
+      await credenciales.connect(otro).quitarVencidoDelGrupo(tokenId, siblings);
+      expect((await credenciales.compromisoDe(tokenId))[1]).to.equal(false);
+
+      const futura = BigInt((await time.latest()) + VIGENCIA);
+      await expect(credenciales.renovar(tokenId, futura))
+        .to.be.revertedWithCustomError(credenciales, "ProveedorFueraDelGrupo")
+        .withArgs(tokenId);
+      // Ya fuera del grupo, se revoca con `revocar`
+      await credenciales.revocar(tokenId, "Vencida");
     });
   });
 
@@ -511,12 +510,6 @@ describe("CredencialNFT", () => {
       const [id, datos] = await credenciales.credencialDe(empleado.address);
       expect(id).to.equal(tokenId);
       expect(datos.revocada).to.equal(true);
-    });
-
-    it("solicitud falla con un id inexistente", async () => {
-      const { credenciales } = await loadFixture(desplegar);
-      await expect(credenciales.solicitud(0n)).to.be.revertedWithCustomError(credenciales, "SolicitudInexistente");
-      await expect(credenciales.solicitud(1n)).to.be.revertedWithCustomError(credenciales, "SolicitudInexistente");
     });
   });
 });

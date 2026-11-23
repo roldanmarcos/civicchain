@@ -1,20 +1,13 @@
-// Panel de administración: solicitudes de proveedores, alta de funcionarios, auditoría y credenciales.
+// Panel de administración: alta de funcionarios, inscripciones automáticas de proveedores, auditoría
+// contra el padrón y listado de credenciales.
 
-import { VIGENCIA_POR_DEFECTO_DIAS } from "../config/contracts.js";
-import { afip } from "../services/afip/index.js";
+import { VIGENCIA_POR_DEFECTO_DIAS, organismos } from "../config/contracts.js";
 import { padronEmpleados } from "../services/padron-empleados/index.js";
-import {
-  aprobarSolicitud,
-  credencialDeWallet,
-  emitirFuncionario,
-  leerCredenciales,
-  leerSolicitudes,
-  rechazarSolicitud,
-  renovar,
-  revocar,
-} from "../web3/credenciales.js";
+import { datosDeFuncionario, datosDeInscripcion, todasLasInscripciones } from "../web3/backend.js";
+import { credencialDeWallet, emitirFuncionario, leerCredenciales, renovar, revocar } from "../web3/credenciales.js";
 import { explicarError } from "../web3/errores.js";
-import { obtenerSesion } from "../web3/sesion.js";
+import { protocolo } from "../web3/identidad.js";
+import { obtenerFirmante, obtenerSesion } from "../web3/sesion.js";
 import { bloqueConexion } from "./conexion.js";
 import {
   ETIQUETAS_ROL,
@@ -24,23 +17,23 @@ import {
   formatearCuit,
   formatearFecha,
   html,
+  mostrarDialogo,
+  mostrarToast,
   nombreOrganismo,
   pedirTexto,
   render,
 } from "./dom.js";
 
 const PESTANAS = {
-  solicitudes: "Solicitudes de proveedores",
   alta: "Alta de funcionarios",
+  inscripciones: "Inscripciones de proveedores",
   auditoria: "Auditoría",
   credenciales: "Credenciales",
 };
 
-let pestanaActual = "solicitudes";
-/** Solicitudes pendientes del último render (para verificarlas en AFIP). */
-let pendientesMostradas = [];
-/** DNI buscado en "Alta de funcionarios" (se conserva si la pantalla se vuelve a dibujar). */
-let dniBuscado = "";
+let pestanaActual = "alta";
+/** Datos para precargar el formulario de alta (por ejemplo, desde el padrón o la auditoría). */
+let precarga = null;
 /** Evita que un render lento pise a uno más nuevo. */
 let renderId = 0;
 
@@ -63,9 +56,7 @@ export function renderAdmin() {
     contenedor,
     html`<div class="tabs" role="tablist">
         ${Object.entries(PESTANAS).map(
-          ([id, titulo]) => html`<button class="tab ${id === pestanaActual ? "active" : ""}" role="tab" data-pestana="${id}">
-            ${titulo}${id === "solicitudes" ? html` <span class="tab-count hidden" id="tab-count-solicitudes"></span>` : ""}
-          </button>`,
+          ([id, titulo]) => html`<button class="tab ${id === pestanaActual ? "active" : ""}" role="tab" data-pestana="${id}">${titulo}</button>`,
         )}
       </div>
       <div id="admin-pestana"><div class="alerta"><p>Cargando…</p></div></div>`,
@@ -73,7 +64,7 @@ export function renderAdmin() {
 
   contenedor.querySelectorAll("[data-pestana]").forEach((boton) =>
     boton.addEventListener("click", () => {
-      pestanaActual = /** @type {HTMLElement} */ (boton).dataset.pestana ?? "solicitudes";
+      pestanaActual = /** @type {HTMLElement} */ (boton).dataset.pestana ?? "alta";
       renderAdmin();
     }),
   );
@@ -85,197 +76,181 @@ async function renderPestana() {
   const id = ++renderId;
   const contenedor = document.getElementById("admin-pestana");
   try {
-    const fragmento = await {
-      solicitudes: pestanaSolicitudes,
-      alta: pestanaAlta,
-      auditoria: pestanaAuditoria,
-      credenciales: pestanaCredenciales,
-    }[pestanaActual]();
+    const fragmento = await { alta: pestanaAlta, inscripciones: pestanaInscripciones, auditoria: pestanaAuditoria, credenciales: pestanaCredenciales }[
+      pestanaActual
+    ]();
     if (id !== renderId || !contenedor.isConnected) return;
     render(contenedor, fragmento);
     conectarAcciones(contenedor);
-    if (pestanaActual === "solicitudes") verificarPendientesEnAfip(contenedor);
-    if (pestanaActual === "alta" && dniBuscado) buscarEnPadron(dniBuscado);
   } catch (error) {
     if (id === renderId) render(contenedor, html`<div class="alerta alerta-error"><p>No se pudieron cargar los datos: ${explicarError(error)}</p></div>`);
   }
 }
 
-/** Cantidad de solicitudes pendientes (para el contador del menú lateral). */
-export async function contarSolicitudesPendientes() {
-  return (await leerSolicitudes()).filter((s) => s.estado === "PENDIENTE").length;
-}
-
 // ---------------------------------------------------------------------------
-// Solicitudes de proveedores
-// ---------------------------------------------------------------------------
-
-async function pestanaSolicitudes() {
-  const solicitudes = await leerSolicitudes();
-  const pendientes = solicitudes.filter((s) => s.estado === "PENDIENTE");
-  const resueltas = solicitudes.filter((s) => s.estado !== "PENDIENTE");
-  pendientesMostradas = pendientes;
-
-  const contador = document.getElementById("tab-count-solicitudes");
-  if (contador) {
-    contador.textContent = String(pendientes.length);
-    contador.classList.toggle("hidden", pendientes.length === 0);
-  }
-
-  return html`
-    <p class="texto-suave">Cada solicitud se verifica contra el padrón de AFIP. Aprobarla emite la credencial de
-      proveedor (${VIGENCIA_POR_DEFECTO_DIAS} días de vigencia) a la wallet que la envió.</p>
-
-    ${
-      pendientes.length === 0
-        ? html`<div class="empty-state"><span>✓</span><strong>No hay solicitudes pendientes</strong></div>`
-        : pendientes.map(
-            (s) => html`<div class="panel-card" data-solicitud="${s.id}">
-              <div class="panel-card-head">
-                <strong>#${s.id} · ${s.razonSocial}</strong>
-                <span class="texto-suave">${formatearFecha(s.creadaEn)}</span>
-              </div>
-              <dl class="datos">
-                <dt>CUIT</dt><dd>${formatearCuit(s.cuit)}</dd>
-                <dt>Domicilio</dt><dd>${s.domicilioLegal}</dd>
-                <dt>Rubros</dt><dd>${s.rubros}</dd>
-                <dt>Wallet</dt><dd><code title="${s.wallet}">${acortar(s.wallet)}</code></dd>
-              </dl>
-              <div class="verificacion" id="afip-${s.id}">Consultando AFIP…</div>
-              <div class="acciones">
-                <button class="button button-primary button-small" data-aprobar="${s.id}" disabled>Aprobar</button>
-                <button class="button button-outline button-small" data-rechazar="${s.id}">Rechazar</button>
-              </div>
-            </div>`,
-          )
-    }
-
-    ${
-      resueltas.length > 0 &&
-      html`<h3 class="subtitulo">Historial</h3>
-        <div class="tabla-scroll"><table class="tabla">
-          <thead><tr><th>#</th><th>Razón social</th><th>CUIT</th><th>Estado</th><th>Detalle</th></tr></thead>
-          <tbody>${resueltas.map(
-            (s) => html`<tr><td>${s.id}</td><td>${s.razonSocial}</td><td>${formatearCuit(s.cuit)}</td>
-              <td>${badgeEstado(s.estado)}</td><td class="texto-suave">${s.motivoRechazo ?? ""}</td></tr>`,
-          )}</tbody>
-        </table></div>`
-    }`;
-}
-
-/** Consulta AFIP para cada solicitud pendiente y actualiza su tarjeta. */
-async function verificarPendientesEnAfip(contenedor) {
-  for (const s of pendientesMostradas) {
-    const tarjeta = contenedor.querySelector(`[data-solicitud="${s.id}"]`);
-    if (!tarjeta) continue;
-
-    const v = await afip.verificarSolicitud({ cuit: s.cuit, razonSocial: s.razonSocial });
-    if (!tarjeta.isConnected) return;
-
-    const caja = tarjeta.querySelector(`#afip-${s.id}`);
-    const aprobar = /** @type {HTMLButtonElement} */ (tarjeta.querySelector("[data-aprobar]"));
-    const rechazar = /** @type {HTMLButtonElement} */ (tarjeta.querySelector("[data-rechazar]"));
-    caja.className = `verificacion ${v.ok ? "verificacion-ok" : "verificacion-error"}`;
-    caja.textContent = `${v.ok ? "✓" : "✗"} ${v.mensaje}`;
-    aprobar.disabled = false;
-    if (!v.ok) {
-      // Se puede aprobar igual (el admin revisó el caso a mano), pero no es la acción sugerida.
-      aprobar.textContent = "Aprobar igual";
-      aprobar.className = "button button-outline button-small";
-      rechazar.className = "button button-primary button-small";
-      rechazar.dataset.motivo = v.mensaje;
-    }
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Alta de funcionarios
+// Alta de funcionarios (manual, con importación opcional desde el padrón)
 // ---------------------------------------------------------------------------
 
 async function pestanaAlta() {
-  const registros = await padronEmpleados.listar();
+  const p = precarga ?? {};
+  const opcion = (valor, texto, actual) => html`<option value="${valor}" ${String(valor) === String(actual) ? "selected" : ""}>${texto}</option>`;
   return html`
-    <p class="texto-suave">Buscá a la persona por DNI en el padrón de empleados. Nombre, función, organismo y wallet
-      salen del padrón; en la blockchain queda solo el nombre y el organismo.</p>
+    <p class="texto-suave">Cargá los datos del empleado o inspector y la wallet que declaró. En la blockchain quedan
+      públicos su nombre y su organismo (para saber quién firma cada acción); el DNI, el cargo y la resolución
+      quedan en la base de CivicChain y en la cadena va solo su huella (hash).</p>
+
     <form class="busqueda-dni" id="form-dni">
       <div class="form-field">
-        <label for="alta-dni">DNI</label>
-        <input id="alta-dni" inputmode="numeric" placeholder="35.222.333" value="${dniBuscado}" required>
+        <label for="alta-dni-buscar">Importar desde el padrón de RR.HH. (opcional)</label>
+        <input id="alta-dni-buscar" inputmode="numeric" placeholder="DNI, ej. 35.222.333">
       </div>
-      <button class="button button-primary button-small" type="submit">Buscar en el padrón</button>
+      <button class="button button-outline button-small" type="submit">Buscar en el padrón</button>
     </form>
-    <div id="alta-resultado"></div>
+    <div id="alta-padron"></div>
 
-    <h3 class="subtitulo">Padrón de empleados</h3>
-    <div class="tabla-scroll"><table class="tabla">
-      <thead><tr><th>Nombre</th><th>DNI</th><th>Función</th><th>Organismo</th><th>Estado</th><th></th></tr></thead>
-      <tbody>${registros.map(
-        (e) => html`<tr>
-          <td>${e.nombre}</td><td>${e.dni}</td><td>${ETIQUETAS_ROL[e.funcion]}</td>
-          <td>${nombreOrganismo(e.organismoId)}</td>
-          <td>${e.estado === "ACTIVO" ? "Activo" : "Baja"}</td>
-          <td><button class="button button-text button-small" data-usar-dni="${e.dni}">Elegir</button></td>
-        </tr>`,
-      )}</tbody>
-    </table></div>`;
+    <form id="form-alta" class="panel-card" novalidate>
+      <div class="form-grid">
+        <div class="form-field">
+          <label for="alta-wallet">Wallet</label>
+          <input id="alta-wallet" name="wallet" placeholder="0x…" value="${p.wallet ?? ""}" autocomplete="off" required>
+        </div>
+        <div class="form-field">
+          <label for="alta-rol">Rol</label>
+          <select id="alta-rol" name="rol">${opcion("EMPLEADO", "Empleado estatal", p.rol)}${opcion("INSPECTOR", "Inspector", p.rol)}</select>
+        </div>
+        <div class="form-field">
+          <label for="alta-nombre">Nombre y apellido</label>
+          <input id="alta-nombre" name="nombre" maxlength="120" value="${p.nombre ?? ""}" required>
+        </div>
+        <div class="form-field">
+          <label for="alta-dni">DNI</label>
+          <input id="alta-dni" name="dni" inputmode="numeric" value="${p.dni ?? ""}" required>
+        </div>
+        <div class="form-field">
+          <label for="alta-organismo">Organismo</label>
+          <select id="alta-organismo" name="organismoId">${organismos.map((o) => opcion(o.id, o.nombre, p.organismoId))}</select>
+        </div>
+        <div class="form-field">
+          <label for="alta-area">Área</label>
+          <input id="alta-area" name="area" value="${p.area ?? ""}">
+        </div>
+        <div class="form-field">
+          <label for="alta-cargo">Cargo</label>
+          <input id="alta-cargo" name="cargo" value="${p.cargo ?? ""}">
+        </div>
+        <div class="form-field">
+          <label for="alta-resolucion">Número de resolución</label>
+          <input id="alta-resolucion" name="resolucion" placeholder="Res. 123/2026" value="${p.resolucion ?? ""}">
+        </div>
+        <div class="form-field">
+          <label for="alta-domicilio">Domicilio legal</label>
+          <input id="alta-domicilio" name="domicilioLegal" value="${p.domicilioLegal ?? ""}">
+        </div>
+        <div class="form-field">
+          <label for="alta-dias">Vigencia (días)</label>
+          <input id="alta-dias" name="dias" type="number" min="1" value="${VIGENCIA_POR_DEFECTO_DIAS}">
+        </div>
+      </div>
+      <div id="alta-resultado"></div>
+      <button class="button button-primary" type="submit">Emitir credencial <span>→</span></button>
+    </form>`;
 }
 
 async function buscarEnPadron(dni) {
-  dniBuscado = dni;
-  const resultado = document.getElementById("alta-resultado");
-  if (!resultado) return;
-  const campoDni = /** @type {HTMLInputElement | null} */ (document.getElementById("alta-dni"));
-  if (campoDni) campoDni.value = dni;
-  render(resultado, html`<div class="alerta"><p>Consultando el padrón…</p></div>`);
-
-  let v, existente;
-  try {
-    v = await padronEmpleados.verificarAlta(dni);
-    existente = v.empleado?.wallet ? await credencialDeWallet(v.empleado.wallet) : null;
-  } catch (error) {
-    return render(resultado, html`<div class="alerta alerta-error"><p>No se pudo completar la búsqueda: ${explicarError(error)}</p></div>`);
-  }
+  const contenedor = document.getElementById("alta-padron");
+  render(contenedor, html`<div class="alerta"><p>Consultando el padrón…</p></div>`);
+  const v = await padronEmpleados.verificarAlta(dni);
   const e = v.empleado;
-  if (!e) return render(resultado, html`<div class="alerta alerta-error"><p>${v.mensaje}</p></div>`);
-
-  const yaTiene = existente && !existente.revocada;
-  const puedeEmitir = v.ok && !yaTiene;
-
+  if (!e) return render(contenedor, html`<div class="alerta alerta-error"><p>${v.mensaje}</p></div>`);
+  precarga = {
+    wallet: e.wallet ?? "",
+    rol: e.funcion,
+    nombre: e.nombre,
+    dni: e.dni,
+    organismoId: e.organismoId,
+    area: e.area,
+    cargo: e.cargo,
+    resolucion: e.resolucion,
+  };
+  await renderPestana();
   render(
-    resultado,
-    html`<div class="panel-card">
-      <div class="panel-card-head"><strong>${e.nombre}</strong>
-        <span class="card-status ${e.estado === "ACTIVO" ? "" : "status-revoked"}">${e.estado === "ACTIVO" ? "Activo" : "Baja"}</span>
-      </div>
-      <dl class="datos">
-        <dt>Función</dt><dd>${ETIQUETAS_ROL[e.funcion]}</dd>
-        <dt>Organismo</dt><dd>${nombreOrganismo(e.organismoId)} — ${e.area}</dd>
-        <dt>Cargo</dt><dd>${e.cargo} (${e.resolucion})</dd>
-        <dt>Wallet</dt><dd>${e.wallet ? html`<code>${e.wallet}</code>` : "No declaró wallet"}</dd>
-      </dl>
-      ${!v.ok && html`<div class="verificacion verificacion-error">✗ ${v.mensaje}</div>`}
-      ${yaTiene && html`<div class="verificacion verificacion-error">✗ Esa wallet ya tiene la credencial #${existente.tokenId} (${ETIQUETAS_ROL[existente.rol]}).</div>`}
-      ${
-        puedeEmitir &&
-        html`<div class="acciones">
-          <label class="dias">Vigencia <input type="number" id="alta-dias" min="1" value="${VIGENCIA_POR_DEFECTO_DIAS}"> días</label>
-          <button class="button button-primary button-small" id="alta-emitir">Emitir credencial</button>
-        </div>`
-      }
-    </div>`,
+    document.getElementById("alta-padron"),
+    v.ok
+      ? html`<div class="alerta alerta-ok"><p>✓ ${e.nombre}: datos cargados desde el padrón. Revisalos y emití la credencial.</p></div>`
+      : html`<div class="alerta alerta-aviso"><p>${v.mensaje} Se cargaron los datos igual: revisalos antes de emitir.</p></div>`,
   );
+}
 
-  document.getElementById("alta-emitir")?.addEventListener("click", async (ev) => {
-    const dias = Number(/** @type {HTMLInputElement} */ (document.getElementById("alta-dias")).value) || VIGENCIA_POR_DEFECTO_DIAS;
-    const ok = await ejecutarTx(() => emitirFuncionario(e, dias), {
-      boton: /** @type {HTMLButtonElement} */ (ev.currentTarget),
-      exito: `Credencial emitida a ${e.nombre}.`,
-    });
-    if (ok) {
-      dniBuscado = "";
-      renderPestana();
-    }
-  });
+async function enviarAlta(form) {
+  const valor = (n) => /** @type {HTMLInputElement} */ (form.elements.namedItem(n)).value.trim();
+  const datos = {
+    // Tolera lo que se cuela al copiar y pegar (espacios, comillas, backticks) y el checksum en mayúsculas mal.
+    wallet: valor("wallet").replace(/[\s"'`]/g, "").toLowerCase(),
+    rol: /** @type {"EMPLEADO" | "INSPECTOR"} */ (valor("rol")),
+    organismoId: Number(valor("organismoId")),
+    nombre: valor("nombre"),
+    dni: valor("dni"),
+    area: valor("area"),
+    cargo: valor("cargo"),
+    resolucion: valor("resolucion"),
+    domicilioLegal: valor("domicilioLegal"),
+  };
+  const resultado = document.getElementById("alta-resultado");
+  const error = (texto) => render(resultado, html`<div class="alerta alerta-error"><p>${texto}</p></div>`);
+  if (!/^0x[0-9a-fA-F]{40}$/.test(datos.wallet)) return error("La wallet no es válida.");
+  if (!datos.nombre) return error("Falta el nombre.");
+  if (!/^\d{7,8}$/.test(datos.dni.replace(/\D/g, ""))) return error("El DNI tiene que tener 7 u 8 dígitos.");
+
+  const existente = await credencialDeWallet(datos.wallet);
+  if (existente && !existente.revocada) {
+    return error(`Esa wallet ya tiene la credencial #${existente.tokenId} (${ETIQUETAS_ROL[existente.rol]}, ${existente.nombre}).`);
+  }
+
+  const boton = /** @type {HTMLButtonElement} */ (form.querySelector('button[type="submit"]'));
+  boton.disabled = true;
+  try {
+    await emitirFuncionario(datos, Number(valor("dias")) || VIGENCIA_POR_DEFECTO_DIAS, (t) =>
+      render(resultado, html`<div class="alerta"><p>${t}</p></div>`),
+    );
+    mostrarToast(`Credencial emitida a ${datos.nombre}.`);
+    precarga = null;
+    renderPestana();
+  } catch (e) {
+    error(explicarError(e));
+  } finally {
+    if (boton.isConnected) boton.disabled = false;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Inscripciones de proveedores (decisiones automáticas del verificador)
+// ---------------------------------------------------------------------------
+
+async function pestanaInscripciones() {
+  const inscripciones = await todasLasInscripciones(obtenerFirmante());
+  if (inscripciones.length === 0) {
+    return html`<div class="empty-state"><span>◈</span><strong>Todavía no hubo inscripciones</strong>
+      <p>Las inscripciones de proveedores se aprueban o rechazan solas, verificando en AFIP.</p></div>`;
+  }
+  return html`
+    <p class="texto-suave">El verificador aprueba o rechaza solo cada inscripción según AFIP. Acá queda el registro
+      de todas las decisiones para auditarlas. Las autorizadas se convierten en credencial cuando el proveedor
+      confirma la transacción.</p>
+    <div class="tabla-scroll"><table class="tabla">
+      <thead><tr><th>#</th><th>Fecha</th><th>Empresa</th><th>CUIT</th><th>Wallet</th><th>Decisión</th><th>Motivo</th><th></th></tr></thead>
+      <tbody>${inscripciones.map(
+        (i) => html`<tr>
+          <td>${i.id}</td>
+          <td>${formatearFecha(i.creadaEn)}</td>
+          <td>${i.razonSocial}</td>
+          <td>${formatearCuit(i.cuit)}</td>
+          <td><code title="${i.wallet}">${acortar(i.wallet)}</code></td>
+          <td>${badgeEstado(i.estado === "AUTORIZADA" ? "APROBADA" : "RECHAZADA")}</td>
+          <td>${i.motivo}</td>
+          <td>${i.datosHash && html`<button class="button button-text button-small" data-datos-proveedor="${i.datosHash}">Datos</button>`}</td>
+        </tr>`,
+      )}</tbody>
+    </table></div>`;
 }
 
 // ---------------------------------------------------------------------------
@@ -294,7 +269,7 @@ async function pestanaAuditoria() {
     <p class="texto-suave">Cruce de las credenciales vigentes con el padrón de empleados. ${hallazgos.length} hallazgo(s).</p>
     ${hallazgos.map((h) => {
       const c = h.credencial;
-      const revocar = (h.accion === "REVOCAR" || h.accion === "REVOCAR_Y_EMITIR") && c;
+      const revocarla = (h.accion === "REVOCAR" || h.accion === "REVOCAR_Y_EMITIR") && c;
       const emitir = (h.accion === "EMITIR" || h.accion === "REVOCAR_Y_EMITIR") && h.empleado;
       return html`<div class="panel-card hallazgo">
         <div class="panel-card-head">
@@ -303,9 +278,9 @@ async function pestanaAuditoria() {
         </div>
         <p>${h.mensaje}</p>
         <div class="acciones">
-          ${revocar && html`<button class="button button-primary button-small" data-revocar="${c.tokenId}" data-motivo="${h.mensaje}">Revocar</button>`}
-          ${emitir && html`<button class="button ${revocar ? "button-outline" : "button-primary"} button-small" data-emitir-dni="${h.empleado.dni}">
-            ${revocar ? "Después, emitir la nueva" : "Emitir credencial"}</button>`}
+          ${revocarla && html`<button class="button button-primary button-small" data-revocar="${c.tokenId}" data-motivo="${h.mensaje}">Revocar</button>`}
+          ${emitir && html`<button class="button ${revocarla ? "button-outline" : "button-primary"} button-small" data-emitir-dni="${h.empleado.dni}">
+            ${revocarla ? "Después, emitir la nueva" : "Emitir credencial"}</button>`}
           ${h.accion === "RENOVAR" && c && html`<button class="button button-primary button-small" data-renovar="${c.tokenId}">Renovar</button>`}
         </div>
       </div>`;
@@ -321,6 +296,7 @@ async function pestanaCredenciales() {
   if (credenciales.length === 0) {
     return html`<div class="empty-state"><span>◈</span><strong>Todavía no se emitieron credenciales</strong></div>`;
   }
+  const sinHash = "0x" + "0".repeat(64);
 
   return html`<div class="tabla-scroll"><table class="tabla">
     <thead><tr><th>#</th><th>Titular</th><th>Rol</th><th>Organismo / CUIT</th><th>Wallet</th><th>Vence</th><th>Estado</th><th></th></tr></thead>
@@ -333,14 +309,31 @@ async function pestanaCredenciales() {
         <td><code title="${c.wallet}">${acortar(c.wallet)}</code></td>
         <td>${formatearFecha(c.validaHasta)}</td>
         <td>${badgeEstado(c.estado)}</td>
-        <td class="acciones-tabla">${
-          !c.revocada &&
-          html`<button class="button button-text button-small" data-renovar="${c.tokenId}">Renovar</button>
-            <button class="button button-text button-small texto-peligro" data-revocar="${c.tokenId}">Revocar</button>`
-        }</td>
+        <td class="acciones-tabla">
+          ${c.datosHash !== sinHash && html`<button class="button button-text button-small" ${c.rol === "PROVEEDOR" ? html`data-datos-proveedor` : html`data-datos-funcionario`}="${c.datosHash}">Datos</button>`}
+          ${!c.revocada && html`<button class="button button-text button-small" data-renovar="${c.tokenId}">Renovar</button>
+            <button class="button button-text button-small texto-peligro" data-revocar="${c.tokenId}">Revocar</button>`}
+        </td>
       </tr>`,
     )}</tbody>
   </table></div>`;
+}
+
+/** Muestra los datos guardados fuera de la cadena y si su hash coincide con el de la credencial. */
+async function mostrarDatos(hash, tipo) {
+  try {
+    const r = tipo === "proveedor" ? await datosDeInscripcion(hash) : await datosDeFuncionario(obtenerFirmante(), hash);
+    const recalculado = protocolo.datosHash(r.datos, r.sal);
+    const ok = recalculado === hash;
+    mostrarDialogo(
+      "Datos fuera de la cadena",
+      html`<p class="texto-suave">Hash en la blockchain: <code>${hash}</code></p>
+        <div class="verificacion ${ok ? "verificacion-ok" : "verificacion-error"}">${ok ? "✓ El hash recalculado coincide: nadie modificó estos datos." : "✗ El hash no coincide."}</div>
+        <pre class="bloque-json">${JSON.stringify(r.datos, null, 2)}</pre>`,
+    );
+  } catch (error) {
+    mostrarToast(explicarError(error), 6000);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -353,41 +346,11 @@ function conectarAcciones(contenedor) {
       el.addEventListener("click", (ev) => manejador(/** @type {HTMLButtonElement} */ (ev.currentTarget))),
     );
 
-  al("[data-aprobar]", async (boton) => {
-    const id = BigInt(boton.dataset.aprobar ?? "0");
-    const ok = await ejecutarTx(() => aprobarSolicitud(id, VIGENCIA_POR_DEFECTO_DIAS), {
-      boton,
-      exito: `Solicitud #${id} aprobada: credencial emitida.`,
-    });
-    if (ok) renderPestana();
-  });
-
-  al("[data-rechazar]", async (boton) => {
-    const id = BigInt(boton.dataset.rechazar ?? "0");
-    // Si la verificación en AFIP todavía no terminó, hacerla ahora para sugerir el motivo.
-    let sugerido = boton.dataset.motivo;
-    if (sugerido === undefined) {
-      const s = pendientesMostradas.find((p) => p.id === id);
-      const v = s && (await afip.verificarSolicitud({ cuit: s.cuit, razonSocial: s.razonSocial }));
-      sugerido = v && !v.ok ? v.mensaje : "";
-    }
-    const motivo = await pedirTexto({
-      titulo: `Rechazar la solicitud #${id}`,
-      descripcion: "El motivo queda público en la blockchain y el proveedor lo ve en su pantalla.",
-      etiqueta: "Motivo",
-      valor: sugerido,
-      confirmar: "Rechazar",
-    });
-    if (!motivo) return;
-    const ok = await ejecutarTx(() => rechazarSolicitud(id, motivo), { boton, exito: `Solicitud #${id} rechazada.` });
-    if (ok) renderPestana();
-  });
-
   al("[data-revocar]", async (boton) => {
     const tokenId = BigInt(boton.dataset.revocar ?? "0");
     const motivo = await pedirTexto({
       titulo: `Revocar la credencial #${tokenId}`,
-      descripcion: "Es definitivo. El motivo queda público y la credencial se conserva como historial.",
+      descripcion: "Es definitivo. El motivo queda público y la credencial se conserva como historial. A un proveedor además se lo saca del grupo de ofertantes anónimos.",
       etiqueta: "Motivo",
       valor: boton.dataset.motivo ?? "",
       confirmar: "Revocar",
@@ -413,14 +376,19 @@ function conectarAcciones(contenedor) {
 
   al("[data-emitir-dni]", (boton) => {
     pestanaActual = "alta";
-    dniBuscado = boton.dataset.emitirDni ?? "";
     renderAdmin();
+    setTimeout(() => buscarEnPadron(boton.dataset.emitirDni ?? ""), 50);
   });
 
-  al("[data-usar-dni]", (boton) => buscarEnPadron(boton.dataset.usarDni ?? ""));
+  al("[data-datos-proveedor]", (boton) => mostrarDatos(boton.dataset.datosProveedor, "proveedor"));
+  al("[data-datos-funcionario]", (boton) => mostrarDatos(boton.dataset.datosFuncionario, "funcionario"));
 
   contenedor.querySelector("#form-dni")?.addEventListener("submit", (ev) => {
     ev.preventDefault();
-    buscarEnPadron(/** @type {HTMLInputElement} */ (contenedor.querySelector("#alta-dni")).value);
+    buscarEnPadron(/** @type {HTMLInputElement} */ (contenedor.querySelector("#alta-dni-buscar")).value);
+  });
+  contenedor.querySelector("#form-alta")?.addEventListener("submit", (ev) => {
+    ev.preventDefault();
+    enviarAlta(/** @type {HTMLFormElement} */ (ev.currentTarget));
   });
 }

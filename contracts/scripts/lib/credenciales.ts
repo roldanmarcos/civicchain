@@ -1,6 +1,6 @@
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import type { HardhatRuntimeEnvironment } from "hardhat/types/hre";
-import { crearClienteAfip, cuitValido } from "../../../frontend/src/services/afip/afip.js";
+import { crearClienteAfip, cuitValido } from "../../../backend/src/afip/afip.js";
 import { crearClientePadron } from "../../../frontend/src/services/padron-empleados/padron.js";
 
 // ---------------------------------------------------------------------------
@@ -13,7 +13,9 @@ export const CHAIN_ID_LOCAL = 31337;
 
 /** Deben coincidir con el orden de los enums del contrato. */
 export const ROLES = ["PROVEEDOR", "EMPLEADO", "INSPECTOR"] as const;
-export const ESTADOS_SOLICITUD = ["PENDIENTE", "APROBADA", "RECHAZADA", "CANCELADA"] as const;
+
+/** URL del backend (verificador, base de datos, IPFS local y relayer). */
+export const BACKEND_URL = process.env.BACKEND_URL ?? "http://localhost:8787";
 
 // ---------------------------------------------------------------------------
 // CUIT
@@ -44,7 +46,7 @@ const ABIS = new URL("abis/", CONFIG_FRONTEND);
 export interface Deployment {
   address: string;
   deployBlock: number;
-  admins: string[];
+  admins?: string[];
 }
 
 type Deployments = Record<string, Record<string, Deployment>>;
@@ -57,13 +59,16 @@ async function leerDeployments(): Promise<Deployments> {
   }
 }
 
-export async function guardarDeployment(chainId: number, contrato: string, datos: Deployment, abi: unknown) {
+/** Guarda los contratos de una red (reemplaza los anteriores de esa red) y sus ABIs. */
+export async function guardarDeployments(chainId: number, contratos: Record<string, Deployment & { abi?: unknown }>) {
   const deployments = await leerDeployments();
-  deployments[chainId] = { ...deployments[chainId], [contrato]: datos };
+  deployments[chainId] = Object.fromEntries(Object.entries(contratos).map(([nombre, { abi, ...datos }]) => [nombre, datos]));
   await writeFile(DEPLOYMENTS, JSON.stringify(deployments, null, 2) + "\n");
 
   await mkdir(ABIS, { recursive: true });
-  await writeFile(new URL(`${contrato}.json`, ABIS), JSON.stringify(abi, null, 2) + "\n");
+  for (const [nombre, { abi }] of Object.entries(contratos)) {
+    if (abi) await writeFile(new URL(`${nombre}.json`, ABIS), JSON.stringify(abi, null, 2) + "\n");
+  }
 }
 
 export async function leerDeployment(chainId: number, contrato: string): Promise<Deployment> {
@@ -76,9 +81,9 @@ export async function leerDeployment(chainId: number, contrato: string): Promise
   return datos;
 }
 
-/** Cliente de la AFIP simulada (el mismo módulo que usa la dApp), con el padrón leído del disco. */
+/** Cliente de la AFIP simulada (el mismo módulo que usa el backend), con el padrón leído del disco. */
 export async function clienteAfip() {
-  const padron = JSON.parse(await readFile(new URL("../../../frontend/src/services/afip/padron.json", import.meta.url), "utf8"));
+  const padron = JSON.parse(await readFile(new URL("../../../backend/src/afip/padron.json", import.meta.url), "utf8"));
   return crearClienteAfip(padron);
 }
 
@@ -192,4 +197,83 @@ export function comoTask<A>(accion: (args: A, hre: HardhatRuntimeEnvironment) =>
 
 export function formatearFecha(timestamp: bigint | number): string {
   return new Date(Number(timestamp) * 1000).toLocaleString("es-AR");
+}
+
+// ---------------------------------------------------------------------------
+// Backend
+// ---------------------------------------------------------------------------
+
+/** Texto que firma un admin para identificarse ante el backend (igual que backend/src/funcionarios.js). */
+const mensajeAccesoAdmin = (fechaIso: string) => `CivicChain: acceso de administrador\nFecha: ${fechaIso}`;
+
+interface FirmanteMensajes {
+  signMessage(mensaje: string): Promise<string>;
+}
+
+/** Llama al backend. Con `admin`, firma el acceso de administrador. */
+export async function llamarBackend<T>(ruta: string, cuerpo: unknown, admin?: FirmanteMensajes): Promise<T> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (admin) {
+    const fecha = new Date().toISOString();
+    headers["X-Admin-Fecha"] = fecha;
+    headers["X-Admin-Firma"] = await admin.signMessage(mensajeAccesoAdmin(fecha));
+  }
+  let respuesta: Response;
+  try {
+    respuesta = await fetch(`${BACKEND_URL}${ruta}`, { method: "POST", headers, body: JSON.stringify(cuerpo) });
+  } catch {
+    throw new Error(`No se pudo conectar con el backend en ${BACKEND_URL}. ¿Está corriendo (cd backend && npm start)?`);
+  }
+  const datos = (await respuesta.json()) as T & { error?: string };
+  if (!respuesta.ok) throw new Error(datos.error ?? `El backend respondió ${respuesta.status}`);
+  return datos as T;
+}
+
+// ---------------------------------------------------------------------------
+// Grupo de proveedores (Semaphore)
+// ---------------------------------------------------------------------------
+
+/**
+ * Siblings de la prueba de Merkle de `commitment` en el grupo de proveedores, reconstruyendo el
+ * grupo con los eventos de Semaphore. Hacen falta para sacar a un proveedor del grupo.
+ */
+export async function siblingsDelProveedor(
+  ethers: { getContractAt(nombre: string, address: string): Promise<unknown> },
+  credenciales: { semaphore(): Promise<string>; grupoProveedores(): Promise<bigint> },
+  commitment: bigint,
+): Promise<bigint[]> {
+  const { Group } = await import("@semaphore-protocol/core");
+  const semaphore = (await ethers.getContractAt("Semaphore", await credenciales.semaphore())) as unknown as EventosSemaphore;
+  const grupoId = await credenciales.grupoProveedores();
+  const grupo = new Group();
+  const [agregados, varios, actualizados, quitados] = await Promise.all([
+    semaphore.queryFilter(semaphore.filters.MemberAdded(grupoId)),
+    semaphore.queryFilter(semaphore.filters.MembersAdded(grupoId)),
+    semaphore.queryFilter(semaphore.filters.MemberUpdated(grupoId)),
+    semaphore.queryFilter(semaphore.filters.MemberRemoved(grupoId)),
+  ]);
+  const eventos = [...agregados, ...varios, ...actualizados, ...quitados].sort(
+    (a, b) => a.blockNumber - b.blockNumber || a.index - b.index,
+  );
+  for (const e of eventos) {
+    if (e.fragment.name === "MemberAdded") grupo.addMember(e.args.identityCommitment);
+    else if (e.fragment.name === "MembersAdded") grupo.addMembers([...e.args.identityCommitments]);
+    else if (e.fragment.name === "MemberUpdated") grupo.updateMember(Number(e.args.index), e.args.newIdentityCommitment);
+    else grupo.removeMember(Number(e.args.index));
+  }
+  const indice = grupo.indexOf(commitment);
+  if (indice < 0) throw new Error("El proveedor no está en el grupo de Semaphore.");
+  return grupo.generateMerkleProof(indice).siblings;
+}
+
+interface EventoSemaphore {
+  blockNumber: number;
+  index: number;
+  fragment: { name: string };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  args: any;
+}
+interface EventosSemaphore {
+  filters: Record<string, (grupoId: bigint) => unknown>;
+  queryFilter(filtro: unknown): Promise<EventoSemaphore[]>;
 }

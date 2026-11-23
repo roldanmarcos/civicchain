@@ -10,10 +10,42 @@ const MENSAJES_CONTRATO = {
   OrganismoInvalido: "El organismo no es válido.",
   RolInvalido: "El rol no es válido para esta operación.",
   MotivoVacio: "Tenés que indicar un motivo.",
-  SolicitudPendienteExistente: "Ya tenés una solicitud pendiente.",
-  SolicitudNoPendiente: "La solicitud ya fue resuelta.",
-  SolicitudInexistente: "La solicitud no existe.",
-  NoEsTuSolicitud: "Solo podés cancelar tus propias solicitudes.",
+  FirmaInvalida: "La autorización del verificador no es válida para esta wallet.",
+  FirmaVencida: "La autorización del verificador venció. Volvé a enviar la inscripción.",
+  FirmaYaUsada: "Esa autorización ya se usó.",
+  UsarRevocarProveedor: "A los proveedores hay que revocarlos sacándolos del grupo (usá Revocar desde la dApp).",
+  NoEsProveedor: "La credencial no es de un proveedor.",
+  ProveedorFueraDelGrupo: "El proveedor ya no está en el grupo: hay que revocarlo y volver a inscribirlo.",
+  CredencialNoVencida: "La credencial todavía no venció.",
+  // Licitaciones
+  SinRol: "Tu wallet no tiene la credencial necesaria para esta acción.",
+  OtroOrganismo: "La licitación (o el inspector) es de otro organismo.",
+  LicitacionInexistente: "La licitación no existe.",
+  OfertaInexistente: "La oferta no existe.",
+  EtapasInvalidas: "Cada etapa necesita un monto mayor a cero (y puede haber hasta 20 etapas).",
+  FueraDePlazo: "Esta acción no corresponde a la etapa actual de la licitación.",
+  OfertaDuplicada: "Tu empresa ya ofertó en esta licitación.",
+  SobresIncompletos: "Hay que abrir todos los sobres juntos.",
+  PlazoDeAdjudicacionVencido: "Venció la fecha límite de adjudicación: solo se puede declarar desierta.",
+  IdentidadesTodaviaOcultas: "Las identidades se revelan recién después de la fecha límite de adjudicación.",
+  YaFinanciada: "Los fondos ya estaban depositados.",
+  MontoIncorrecto: "El depósito tiene que ser exactamente el monto adjudicado.",
+  SinFondos: "El organismo todavía no depositó los fondos de la obra.",
+  PagoFallido: "No se pudo transferir el pago al contratista.",
+  CompromisoIncorrecto: "Los valores no coinciden con lo que se ofertó.",
+  DesgloseInvalido: "El desglose por etapa no suma el monto total.",
+  OfertaNoAbierta: "Solo se pueden adjudicar ofertas abiertas.",
+  SuperaPresupuesto: "La oferta supera el presupuesto oficial.",
+  AutoriaIncorrecta: "Esta wallet no es la autora de esa oferta.",
+  AutoriaYaRevelada: "La autoría ya fue revelada.",
+  InspectorYaAsignado: "Ese inspector ya está asignado.",
+  InspectoresInvalidos: "La obra tiene que requerir entre 1 y 10 inspectores.",
+  CupoDeInspectoresCompleto: "La obra ya tiene asignados todos los inspectores que requiere.",
+  FaltanInspectores: "Todavía faltan asignar inspectores: hasta tener todos los que requiere la obra no se pueden aprobar etapas.",
+  YaAprobasteEstaEtapa: "Ya aprobaste esta etapa. Se paga cuando la aprueben los demás inspectores.",
+  NoEsInspectorAsignado: "No sos inspector asignado a esta obra.",
+  EtapaIncorrecta: "Hay que evaluar las etapas en orden.",
+  SinContratista: "El ganador todavía no reveló su identidad.",
   CredencialYaRevocada: "La credencial ya estaba revocada.",
   CredencialInexistente: "La credencial no existe.",
   CredencialIntransferible: "Las credenciales no se pueden transferir.",
@@ -25,6 +57,9 @@ export function explicarError(error) {
 
   if (e?.code === "ACTION_REJECTED" || e?.code === 4001 || e?.info?.error?.code === 4001) {
     return "Cancelaste la operación en MetaMask.";
+  }
+  if (e?.code === 4100 || e?.info?.error?.code === 4100 || e?.error?.code === 4100) {
+    return "La cuenta elegida en MetaMask no está conectada a este sitio. Abrí MetaMask, tocá \"No conectada\" (o el ícono del sitio) y conectá esta cuenta, después volvé a intentar.";
   }
   if (e?.code === "INSUFFICIENT_FUNDS") {
     return "Tu wallet no tiene ETH suficiente para pagar el gas.";

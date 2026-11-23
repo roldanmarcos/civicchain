@@ -2,11 +2,15 @@
 //
 // Imita la consulta del padrón de contribuyentes (servicio ws_sr_padron_a13 de AFIP):
 // dado un CUIT devuelve la persona inscripta, o null si no existe.
-// La usan el panel de admin y el formulario de inscripción de la dApp, y las tasks de consola.
+// La usa el backend para aprobar o rechazar solo las inscripciones de proveedores, y los tests.
 //
-// Para conectarla a la AFIP real habría que reemplazar `consultarCuit` por una llamada a un
-// backend propio, porque el servicio real exige certificado digital y no se puede llamar
-// desde el navegador. El resto del código (verificarSolicitud) no cambia.
+// Para conectarla a la AFIP real habría que reemplazar `consultarCuit` por la llamada al servicio
+// (exige certificado digital, por eso vive en el backend y no en el navegador). El resto no cambia.
+//
+// Representación: verificar el CUIT no alcanza para aprobar solo, porque cualquiera puede escribir
+// el CUIT de una empresa real. Hace falta probar que quien se inscribe la representa. En la AFIP
+// real eso sería autenticarse con clave fiscal (nivel 3) o firma digital; acá se simula con un
+// código por CUIT (`claveFiscalDemo` en padron.json).
 //
 // Este módulo no importa el padrón: lo recibe por parámetro, así funciona igual en Vite y en Node.
 
@@ -20,6 +24,7 @@
  * @property {string} [nombre] Solo personas físicas
  * @property {{ direccion: string, localidad: string, descripcionProvincia: string }} domicilioFiscal
  * @property {string[]} actividades
+ * @property {string} [claveFiscalDemo] Solo en la simulación: el "código" que prueba la representación
  */
 
 /**
@@ -36,6 +41,7 @@ export const RESULTADOS = {
   CUIT_INEXISTENTE: "CUIT_INEXISTENTE",
   CUIT_INACTIVO: "CUIT_INACTIVO",
   RAZON_SOCIAL_NO_COINCIDE: "RAZON_SOCIAL_NO_COINCIDE",
+  REPRESENTACION_NO_VERIFICADA: "REPRESENTACION_NO_VERIFICADA",
 };
 
 /** Mismo algoritmo que `cuitValido` del contrato: 11 dígitos y dígito verificador. */
@@ -93,10 +99,11 @@ export function crearClienteAfip(padron, { demoraMs = 0 } = {}) {
 
   /**
    * Verifica los datos de una solicitud de inscripción contra el padrón.
-   * @param {{ cuit: string | number | bigint, razonSocial: string }} solicitud
+   * Si se pasa `claveFiscal`, además verifica que quien se inscribe represente a la empresa.
+   * @param {{ cuit: string | number | bigint, razonSocial: string, claveFiscal?: string }} solicitud
    * @returns {Promise<Verificacion>}
    */
-  async function verificarSolicitud({ cuit, razonSocial }) {
+  async function verificarSolicitud({ cuit, razonSocial, claveFiscal }) {
     if (!cuitValido(cuit)) {
       return { resultado: RESULTADOS.CUIT_INVALIDO, ok: false, mensaje: "El CUIT no es válido.", persona: null };
     }
@@ -126,6 +133,15 @@ export function crearClienteAfip(padron, { demoraMs = 0 } = {}) {
         resultado: RESULTADOS.RAZON_SOCIAL_NO_COINCIDE,
         ok: false,
         mensaje: `La razón social no coincide: en AFIP figura "${nombreAfip}".`,
+        persona,
+      };
+    }
+
+    if (claveFiscal !== undefined && claveFiscal !== persona.claveFiscalDemo) {
+      return {
+        resultado: RESULTADOS.REPRESENTACION_NO_VERIFICADA,
+        ok: false,
+        mensaje: "No se pudo verificar que representes a la empresa: la clave fiscal no es correcta.",
         persona,
       };
     }

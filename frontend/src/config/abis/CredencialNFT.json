@@ -5,6 +5,11 @@
         "internalType": "address",
         "name": "admin",
         "type": "address"
+      },
+      {
+        "internalType": "contract ISemaphore",
+        "name": "semaphore_",
+        "type": "address"
       }
     ],
     "stateMutability": "nonpayable",
@@ -45,6 +50,17 @@
   {
     "inputs": [],
     "name": "CredencialIntransferible",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "tokenId",
+        "type": "uint256"
+      }
+    ],
+    "name": "CredencialNoVencida",
     "type": "error"
   },
   {
@@ -190,6 +206,26 @@
   },
   {
     "inputs": [],
+    "name": "FirmaInvalida",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "FirmaVencida",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "FirmaYaUsada",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "InvalidShortString",
+    "type": "error"
+  },
+  {
+    "inputs": [],
     "name": "MotivoVacio",
     "type": "error"
   },
@@ -197,16 +233,27 @@
     "inputs": [
       {
         "internalType": "uint256",
-        "name": "solicitudId",
+        "name": "tokenId",
         "type": "uint256"
       }
     ],
-    "name": "NoEsTuSolicitud",
+    "name": "NoEsProveedor",
     "type": "error"
   },
   {
     "inputs": [],
     "name": "OrganismoInvalido",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "tokenId",
+        "type": "uint256"
+      }
+    ],
+    "name": "ProveedorFueraDelGrupo",
     "type": "error"
   },
   {
@@ -233,39 +280,28 @@
   {
     "inputs": [
       {
-        "internalType": "uint256",
-        "name": "solicitudId",
-        "type": "uint256"
+        "internalType": "string",
+        "name": "str",
+        "type": "string"
       }
     ],
-    "name": "SolicitudInexistente",
-    "type": "error"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "uint256",
-        "name": "solicitudId",
-        "type": "uint256"
-      }
-    ],
-    "name": "SolicitudNoPendiente",
-    "type": "error"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "uint256",
-        "name": "solicitudId",
-        "type": "uint256"
-      }
-    ],
-    "name": "SolicitudPendienteExistente",
+    "name": "StringTooLong",
     "type": "error"
   },
   {
     "inputs": [],
     "name": "TextoInvalido",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "tokenId",
+        "type": "uint256"
+      }
+    ],
+    "name": "UsarRevocarProveedor",
     "type": "error"
   },
   {
@@ -378,6 +414,12 @@
         "internalType": "uint64",
         "name": "validaHasta",
         "type": "uint64"
+      },
+      {
+        "indexed": false,
+        "internalType": "bytes32",
+        "name": "datosHash",
+        "type": "bytes32"
       }
     ],
     "name": "CredencialEmitida",
@@ -439,11 +481,68 @@
       {
         "indexed": false,
         "internalType": "uint256",
+        "name": "segundos",
+        "type": "uint256"
+      }
+    ],
+    "name": "DuracionRaizCambiada",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [],
+    "name": "EIP712DomainChanged",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": false,
+        "internalType": "uint256",
         "name": "tokenId",
         "type": "uint256"
       }
     ],
     "name": "Locked",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "tokenId",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "identityCommitment",
+        "type": "uint256"
+      }
+    ],
+    "name": "ProveedorAgregadoAlGrupo",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "tokenId",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "identityCommitment",
+        "type": "uint256"
+      }
+    ],
+    "name": "ProveedorQuitadoDelGrupo",
     "type": "event"
   },
   {
@@ -526,100 +625,6 @@
     "inputs": [
       {
         "indexed": true,
-        "internalType": "uint256",
-        "name": "solicitudId",
-        "type": "uint256"
-      },
-      {
-        "indexed": true,
-        "internalType": "uint256",
-        "name": "tokenId",
-        "type": "uint256"
-      }
-    ],
-    "name": "SolicitudAprobada",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": true,
-        "internalType": "uint256",
-        "name": "solicitudId",
-        "type": "uint256"
-      }
-    ],
-    "name": "SolicitudCancelada",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": true,
-        "internalType": "uint256",
-        "name": "solicitudId",
-        "type": "uint256"
-      },
-      {
-        "indexed": true,
-        "internalType": "address",
-        "name": "wallet",
-        "type": "address"
-      },
-      {
-        "indexed": true,
-        "internalType": "uint64",
-        "name": "cuit",
-        "type": "uint64"
-      },
-      {
-        "indexed": false,
-        "internalType": "string",
-        "name": "razonSocial",
-        "type": "string"
-      },
-      {
-        "indexed": false,
-        "internalType": "string",
-        "name": "domicilioLegal",
-        "type": "string"
-      },
-      {
-        "indexed": false,
-        "internalType": "string",
-        "name": "rubros",
-        "type": "string"
-      }
-    ],
-    "name": "SolicitudCreada",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": true,
-        "internalType": "uint256",
-        "name": "solicitudId",
-        "type": "uint256"
-      },
-      {
-        "indexed": false,
-        "internalType": "string",
-        "name": "motivo",
-        "type": "string"
-      }
-    ],
-    "name": "SolicitudRechazada",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": true,
         "internalType": "address",
         "name": "from",
         "type": "address"
@@ -681,6 +686,32 @@
   },
   {
     "inputs": [],
+    "name": "DURACION_RAIZ_INICIAL",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "INSCRIPCION_TYPEHASH",
+    "outputs": [
+      {
+        "internalType": "bytes32",
+        "name": "",
+        "type": "bytes32"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
     "name": "MAX_NOMBRE",
     "outputs": [
       {
@@ -694,12 +725,12 @@
   },
   {
     "inputs": [],
-    "name": "MAX_TEXTO",
+    "name": "VERIFICADOR_ROLE",
     "outputs": [
       {
-        "internalType": "uint256",
+        "internalType": "bytes32",
         "name": "",
-        "type": "uint256"
+        "type": "bytes32"
       }
     ],
     "stateMutability": "view",
@@ -726,30 +757,6 @@
   {
     "inputs": [
       {
-        "internalType": "uint256",
-        "name": "solicitudId",
-        "type": "uint256"
-      },
-      {
-        "internalType": "uint64",
-        "name": "validaHasta",
-        "type": "uint64"
-      }
-    ],
-    "name": "aprobarSolicitud",
-    "outputs": [
-      {
-        "internalType": "uint256",
-        "name": "tokenId",
-        "type": "uint256"
-      }
-    ],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
         "internalType": "address",
         "name": "owner",
         "type": "address"
@@ -770,11 +777,35 @@
     "inputs": [
       {
         "internalType": "uint256",
-        "name": "solicitudId",
+        "name": "tokenId",
         "type": "uint256"
       }
     ],
-    "name": "cancelarSolicitud",
+    "name": "compromisoDe",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "commitment",
+        "type": "uint256"
+      },
+      {
+        "internalType": "bool",
+        "name": "enGrupo",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "segundos",
+        "type": "uint256"
+      }
+    ],
+    "name": "configurarDuracionRaiz",
     "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"
@@ -825,6 +856,11 @@
             "internalType": "string",
             "name": "nombre",
             "type": "string"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "datosHash",
+            "type": "bytes32"
           }
         ],
         "internalType": "struct ICredencialNFT.Credencial",
@@ -886,6 +922,11 @@
             "internalType": "string",
             "name": "nombre",
             "type": "string"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "datosHash",
+            "type": "bytes32"
           }
         ],
         "internalType": "struct ICredencialNFT.Credencial",
@@ -947,6 +988,11 @@
             "internalType": "string",
             "name": "nombre",
             "type": "string"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "datosHash",
+            "type": "bytes32"
           }
         ],
         "internalType": "struct ICredencialNFT.Credencial",
@@ -984,6 +1030,105 @@
         "type": "address"
       },
       {
+        "components": [
+          {
+            "internalType": "uint64",
+            "name": "cuit",
+            "type": "uint64"
+          },
+          {
+            "internalType": "string",
+            "name": "razonSocial",
+            "type": "string"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "datosHash",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "uint256",
+            "name": "identityCommitment",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint64",
+            "name": "validaHasta",
+            "type": "uint64"
+          },
+          {
+            "internalType": "uint64",
+            "name": "venceFirma",
+            "type": "uint64"
+          }
+        ],
+        "internalType": "struct CredencialNFT.Inscripcion",
+        "name": "datos",
+        "type": "tuple"
+      }
+    ],
+    "name": "digestInscripcion",
+    "outputs": [
+      {
+        "internalType": "bytes32",
+        "name": "",
+        "type": "bytes32"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "eip712Domain",
+    "outputs": [
+      {
+        "internalType": "bytes1",
+        "name": "fields",
+        "type": "bytes1"
+      },
+      {
+        "internalType": "string",
+        "name": "name",
+        "type": "string"
+      },
+      {
+        "internalType": "string",
+        "name": "version",
+        "type": "string"
+      },
+      {
+        "internalType": "uint256",
+        "name": "chainId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "address",
+        "name": "verifyingContract",
+        "type": "address"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "salt",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "uint256[]",
+        "name": "extensions",
+        "type": "uint256[]"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "wallet",
+        "type": "address"
+      },
+      {
         "internalType": "enum ICredencialNFT.Rol",
         "name": "rol",
         "type": "uint8"
@@ -1002,6 +1147,11 @@
         "internalType": "uint64",
         "name": "validaHasta",
         "type": "uint64"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "datosHash",
+        "type": "bytes32"
       }
     ],
     "name": "emitirFuncionario",
@@ -1072,6 +1222,19 @@
     "type": "function"
   },
   {
+    "inputs": [],
+    "name": "grupoProveedores",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
     "inputs": [
       {
         "internalType": "bytes32",
@@ -1093,6 +1256,62 @@
       }
     ],
     "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "components": [
+          {
+            "internalType": "uint64",
+            "name": "cuit",
+            "type": "uint64"
+          },
+          {
+            "internalType": "string",
+            "name": "razonSocial",
+            "type": "string"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "datosHash",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "uint256",
+            "name": "identityCommitment",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint64",
+            "name": "validaHasta",
+            "type": "uint64"
+          },
+          {
+            "internalType": "uint64",
+            "name": "venceFirma",
+            "type": "uint64"
+          }
+        ],
+        "internalType": "struct CredencialNFT.Inscripcion",
+        "name": "datos",
+        "type": "tuple"
+      },
+      {
+        "internalType": "bytes",
+        "name": "firma",
+        "type": "bytes"
+      }
+    ],
+    "name": "inscribirProveedor",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "tokenId",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "nonpayable",
     "type": "function"
   },
   {
@@ -1198,16 +1417,16 @@
     "inputs": [
       {
         "internalType": "uint256",
-        "name": "solicitudId",
+        "name": "tokenId",
         "type": "uint256"
       },
       {
-        "internalType": "string",
-        "name": "motivo",
-        "type": "string"
+        "internalType": "uint256[]",
+        "name": "siblings",
+        "type": "uint256[]"
       }
     ],
-    "name": "rechazarSolicitud",
+    "name": "quitarVencidoDelGrupo",
     "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"
@@ -1262,6 +1481,29 @@
       }
     ],
     "name": "revocar",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "tokenId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "string",
+        "name": "motivo",
+        "type": "string"
+      },
+      {
+        "internalType": "uint256[]",
+        "name": "siblings",
+        "type": "uint256[]"
+      }
+    ],
+    "name": "revocarProveedor",
     "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"
@@ -1336,6 +1578,19 @@
     "type": "function"
   },
   {
+    "inputs": [],
+    "name": "semaphore",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
     "inputs": [
       {
         "internalType": "address",
@@ -1351,105 +1606,6 @@
     "name": "setApprovalForAll",
     "outputs": [],
     "stateMutability": "pure",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "uint64",
-        "name": "cuit",
-        "type": "uint64"
-      },
-      {
-        "internalType": "string",
-        "name": "razonSocial",
-        "type": "string"
-      },
-      {
-        "internalType": "string",
-        "name": "domicilioLegal",
-        "type": "string"
-      },
-      {
-        "internalType": "string",
-        "name": "rubros",
-        "type": "string"
-      }
-    ],
-    "name": "solicitarInscripcion",
-    "outputs": [
-      {
-        "internalType": "uint256",
-        "name": "solicitudId",
-        "type": "uint256"
-      }
-    ],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "uint256",
-        "name": "solicitudId",
-        "type": "uint256"
-      }
-    ],
-    "name": "solicitud",
-    "outputs": [
-      {
-        "components": [
-          {
-            "internalType": "address",
-            "name": "wallet",
-            "type": "address"
-          },
-          {
-            "internalType": "uint64",
-            "name": "cuit",
-            "type": "uint64"
-          },
-          {
-            "internalType": "uint64",
-            "name": "creadaEn",
-            "type": "uint64"
-          },
-          {
-            "internalType": "enum CredencialNFT.EstadoSolicitud",
-            "name": "estado",
-            "type": "uint8"
-          },
-          {
-            "internalType": "string",
-            "name": "razonSocial",
-            "type": "string"
-          }
-        ],
-        "internalType": "struct CredencialNFT.Solicitud",
-        "name": "",
-        "type": "tuple"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "wallet",
-        "type": "address"
-      }
-    ],
-    "name": "solicitudPendienteDe",
-    "outputs": [
-      {
-        "internalType": "uint256",
-        "name": "",
-        "type": "uint256"
-      }
-    ],
-    "stateMutability": "view",
     "type": "function"
   },
   {
@@ -1530,19 +1686,6 @@
   {
     "inputs": [],
     "name": "totalEmitidas",
-    "outputs": [
-      {
-        "internalType": "uint256",
-        "name": "",
-        "type": "uint256"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [],
-    "name": "totalSolicitudes",
     "outputs": [
       {
         "internalType": "uint256",
