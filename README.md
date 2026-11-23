@@ -166,7 +166,7 @@ Conexión por **QR** (WalletConnect): definir `VITE_WALLETCONNECT_PROJECT_ID` (g
 ## Tests
 
 ```bash
-cd contracts && npm test   # 97 tests: credenciales, licitaciones (con pruebas ZK reales), AFIP y padrón
+cd contracts && npm test   # 99 tests: credenciales, licitaciones (con pruebas ZK reales), AFIP y padrón
 cd backend && npm test     # verificador, firma, base, IPFS, bot de identidades y API HTTP
 ```
 
@@ -175,15 +175,62 @@ Si no se puede descargar el compilador (sin internet): `npm i -D solc@0.8.28` y
 
 ## Sepolia
 
+### Despliegue actual
+
+Desplegado el 23/11/2026 en el bloque 12197858 (las direcciones y ABIs están en `frontend/src/config/`).
+
+| Contrato | Dirección |
+|---|---|
+| Semaphore | [`0x2D11105cfB96A537Cc01200D18b5020c79C52c05`](https://sepolia.etherscan.io/address/0x2D11105cfB96A537Cc01200D18b5020c79C52c05) |
+| CredencialNFT | [`0x0946701CFD4f8031c7790F3561A2C96e358FBD6f`](https://sepolia.etherscan.io/address/0x0946701CFD4f8031c7790F3561A2C96e358FBD6f) |
+| Licitaciones | [`0x33D584F0DCf0be7B4506AF0E9979ad170aE880fE`](https://sepolia.etherscan.io/address/0x33D584F0DCf0be7B4506AF0E9979ad170aE880fE) |
+
+Semaphore se desplegó junto con su librería PoseidonT3 y su SemaphoreVerifier.
+
+| Wallet | Dirección | Rol |
+|---|---|---|
+| Verificador (backend) | [`0x1dcD1a54610cC4B523f6b136027e43F24d37DC30`](https://sepolia.etherscan.io/address/0x1dcD1a54610cC4B523f6b136027e43F24d37DC30) | `VERIFICADOR_ROLE`: firma las inscripciones de proveedores |
+| Relayer (backend) | [`0x347fb54a16dc15efAAcFe12d9Eb7973944466C3c`](https://sepolia.etherscan.io/address/0x347fb54a16dc15efAAcFe12d9Eb7973944466C3c) | Paga el gas de las ofertas anónimas (hay que mantenerle ETH de prueba) |
+| Deployer | [`0x3cCF250aDb7839Fe6569B97279f547A63F3de66D`](https://sepolia.etherscan.io/address/0x3cCF250aDb7839Fe6569B97279f547A63F3de66D) | Ninguno: renunció a sus roles después del despliegue |
+
+Los admins (`ADMIN_ROLE` y `DEFAULT_ADMIN_ROLE`) son las wallets del equipo de `contracts/config/admins.ts`.
+Las claves privadas no están en el repo: quedan en archivos locales ignorados por git
+(`contracts/.env.sepolia` y `backend/.env`).
+
+### Usar el despliegue actual
+
 ```bash
-cd contracts
-npx hardhat keystore set SEPOLIA_RPC_URL
-npx hardhat keystore set SEPOLIA_PRIVATE_KEY
-VERIFICADOR_ADDRESS=0x... npx hardhat run scripts/deploy.ts --network sepolia
+# backend/.env (lo lee `npm start`)
+RPC_URL=https://ethereum-sepolia-rpc.publicnode.com
+VERIFICADOR_PRIVATE_KEY=0x...
+RELAYER_PRIVATE_KEY=0x...
+
+# frontend/.env.local
+VITE_CHAIN_ID=11155111
+VITE_SEPOLIA_RPC_URL=https://ethereum-sepolia-rpc.publicnode.com
+VITE_BACKEND_URL=http://localhost:8787
 ```
 
-Después: el backend con `RPC_URL`, `VERIFICADOR_PRIVATE_KEY` (la de `VERIFICADOR_ADDRESS`) y `RELAYER_PRIVATE_KEY`
-(con ETH de prueba), y la dApp con `VITE_CHAIN_ID=11155111` y `VITE_BACKEND_URL`.
+Después `npm start` en `backend/` y `npm run dev` en `frontend/`, con MetaMask en Sepolia. Para volver a la red
+local, sacar (o renombrar) esos dos archivos. `scripts/seed.ts` usa cuentas de Hardhat: no sirve en Sepolia.
+
+Los RPC públicos limitan el rango de `eth_getLogs` (publicnode: 50.000 bloques); la dApp y el backend consultan
+los eventos en tramos (`frontend/src/shared/eventos.js`).
+
+### Volver a desplegar
+
+Con variables de entorno (o con `npx hardhat keystore set SEPOLIA_RPC_URL` / `SEPOLIA_PRIVATE_KEY`):
+
+```powershell
+cd contracts
+$env:SEPOLIA_RPC_URL="https://ethereum-sepolia-rpc.publicnode.com"
+$env:SEPOLIA_PRIVATE_KEY="0x..."          # el deployer, con ETH de prueba (~0,15 si el gas está alto)
+$env:VERIFICADOR_ADDRESS="0x..."          # la dirección de VERIFICADOR_PRIVATE_KEY del backend
+npx hardhat run scripts/deploy.ts --network sepolia
+```
+
+El despliegue usa ~16,7M de gas. Después hay que mandarle ETH de prueba al relayer. Ojo: mandar ETH a una cuenta
+nueva cuesta más de 21.000 de gas en Sepolia, así que no hay que fijar el gas a mano.
 
 ## Dudas y limitaciones (marcadas con `DUDA` / `LIMITACIÓN` en el código)
 
