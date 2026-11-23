@@ -18,5 +18,24 @@
       "address": "0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9",
       "deployBlock": 0
     }
+  },
+  "11155111": {
+    "Semaphore": {
+      "address": "0x2D11105cfB96A537Cc01200D18b5020c79C52c05",
+      "deployBlock": 12197858
+    },
+    "CredencialNFT": {
+      "address": "0x0946701CFD4f8031c7790F3561A2C96e358FBD6f",
+      "deployBlock": 12197858,
+      "admins": [
+        "0x2aaFAefa672FF77eDA605d07A89639c19a8e8617",
+        "0x7a1090B6937C900C71745e94565d5911F6b5873B",
+        "0xea09a9a3E9bD00311ec53d9366BA5461Ec2C9bEB"
+      ]
+    },
+    "Licitaciones": {
+      "address": "0x33D584F0DCf0be7B4506AF0E9979ad170aE880fE",
+      "deployBlock": 12197858
+    }
   }
 }

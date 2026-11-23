@@ -5,7 +5,7 @@
   "type": "module",
   "description": "Verificador (AFIP + firma EIP-712), base de datos fuera de la cadena, IPFS local, relayer y bot de apertura",
   "scripts": {
-    "start": "node --disable-warning=ExperimentalWarning src/index.js",
+    "start": "node --env-file-if-exists=.env --disable-warning=ExperimentalWarning src/index.js",
     "test": "node --disable-warning=ExperimentalWarning --test \"test/**/*.test.js\""
   },
   "engines": {

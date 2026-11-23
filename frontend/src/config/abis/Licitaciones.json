@@ -39,6 +39,11 @@
   },
   {
     "inputs": [],
+    "name": "CupoDeInspectoresCompleto",
+    "type": "error"
+  },
+  {
+    "inputs": [],
     "name": "DemasiadasOfertas",
     "type": "error"
   },
@@ -167,6 +172,22 @@
     "type": "error"
   },
   {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "asignados",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "requeridos",
+        "type": "uint256"
+      }
+    ],
+    "name": "FaltanInspectores",
+    "type": "error"
+  },
+  {
     "inputs": [],
     "name": "FechaInvalida",
     "type": "error"
@@ -190,6 +211,11 @@
   {
     "inputs": [],
     "name": "InspectorYaAsignado",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "InspectoresInvalidos",
     "type": "error"
   },
   {
@@ -262,11 +288,6 @@
   },
   {
     "inputs": [],
-    "name": "PresupuestoInvalido",
-    "type": "error"
-  },
-  {
-    "inputs": [],
     "name": "PruebaInvalida",
     "type": "error"
   },
@@ -314,6 +335,11 @@
   {
     "inputs": [],
     "name": "TextoInvalido",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "YaAprobasteEstaEtapa",
     "type": "error"
   },
   {
@@ -788,12 +814,12 @@
   },
   {
     "inputs": [],
-    "name": "BPS",
+    "name": "MAX_ETAPAS",
     "outputs": [
       {
-        "internalType": "uint16",
+        "internalType": "uint256",
         "name": "",
-        "type": "uint16"
+        "type": "uint256"
       }
     ],
     "stateMutability": "view",
@@ -801,12 +827,12 @@
   },
   {
     "inputs": [],
-    "name": "MAX_ETAPAS",
+    "name": "MAX_INSPECTORES",
     "outputs": [
       {
-        "internalType": "uint256",
+        "internalType": "uint8",
         "name": "",
-        "type": "uint256"
+        "type": "uint8"
       }
     ],
     "stateMutability": "view",
@@ -958,6 +984,40 @@
         "type": "uint256"
       },
       {
+        "internalType": "uint256",
+        "name": "etapa",
+        "type": "uint256"
+      },
+      {
+        "internalType": "address",
+        "name": "inspector",
+        "type": "address"
+      }
+    ],
+    "name": "aprobacionesDeEtapa",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "cantidad",
+        "type": "uint256"
+      },
+      {
+        "internalType": "bool",
+        "name": "aprobo",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "licitacionId",
+        "type": "uint256"
+      },
+      {
         "internalType": "address",
         "name": "inspector",
         "type": "address"
@@ -1019,11 +1079,6 @@
         "type": "string"
       },
       {
-        "internalType": "uint256",
-        "name": "presupuestoOficial",
-        "type": "uint256"
-      },
-      {
         "internalType": "uint64",
         "name": "cierreOfertas",
         "type": "uint64"
@@ -1034,9 +1089,14 @@
         "type": "uint64"
       },
       {
-        "internalType": "uint16[]",
-        "name": "porcentajesEtapas",
-        "type": "uint16[]"
+        "internalType": "uint256[]",
+        "name": "montosEtapas",
+        "type": "uint256[]"
+      },
+      {
+        "internalType": "uint8",
+        "name": "inspectoresRequeridos",
+        "type": "uint8"
       }
     ],
     "name": "crearLicitacion",
@@ -1270,9 +1330,9 @@
             "type": "string"
           },
           {
-            "internalType": "uint16[]",
-            "name": "porcentajesEtapas",
-            "type": "uint16[]"
+            "internalType": "uint256[]",
+            "name": "montosEtapas",
+            "type": "uint256[]"
           },
           {
             "internalType": "bool",
@@ -1302,6 +1362,11 @@
           {
             "internalType": "uint8",
             "name": "etapasAprobadas",
+            "type": "uint8"
+          },
+          {
+            "internalType": "uint8",
+            "name": "inspectoresRequeridos",
             "type": "uint8"
           },
           {

@@ -12,6 +12,7 @@
 // local los bloques solo se crean con transacciones (y en las pruebas el reloj de la cadena se adelanta).
 
 import { ethers } from "ethers";
+import { consultarEventos } from "../../frontend/src/shared/eventos.js";
 import { descifrarIdentidad as descifrarConDrand } from "./timelock.js";
 import { explicarRevert } from "./relayer.js";
 
@@ -36,7 +37,7 @@ export function crearBotIdentidades({ cadena, log = console, descifrar = descifr
         const clave = `${id}/${ofertaId}`;
         if (descartadas.has(clave)) continue;
         if ((await licitaciones.oferta(id, ofertaId)).autor !== ethers.ZeroAddress) continue;
-        const [evento] = await licitaciones.queryFilter(licitaciones.filters.OfertaRecibida(id, ofertaId), desdeBloque);
+        const [evento] = await consultarEventos(licitaciones, licitaciones.filters.OfertaRecibida(id, ofertaId), desdeBloque);
         if (!evento) continue;
         try {
           const { wallet, sal } = await descifrar(ethers.toUtf8String(evento.args.cifradoIdentidad));

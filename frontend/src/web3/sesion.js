@@ -10,6 +10,7 @@
 import { BrowserProvider, Contract, JsonRpcProvider } from "ethers";
 import { DEFAULT_CHAIN_ID, NETWORKS, ROLES, WALLETCONNECT_PROJECT_ID, getAbi, getDeployment } from "../config/contracts.js";
 import { historialDeInscripciones } from "./backend.js";
+import { consultarEventos } from "../shared/eventos.js";
 
 /**
  * @typedef {"VIGENTE" | "VENCIDA" | "REVOCADA"} EstadoCredencial
@@ -340,7 +341,7 @@ async function leerDatosDeCuenta(cuenta) {
     const estado = datos.revocada ? "REVOCADA" : ahora() > Number(datos.validaHasta) ? "VENCIDA" : "VIGENTE";
     const rol = ROLES[Number(datos.rol)];
     const motivo = async () => {
-      const eventos = await c.queryFilter(c.filters.CredencialRevocada(tokenId), desde);
+      const eventos = await consultarEventos(c, c.filters.CredencialRevocada(tokenId), desde);
       return eventos.at(-1)?.args?.motivo ?? null;
     };
     credencial = {

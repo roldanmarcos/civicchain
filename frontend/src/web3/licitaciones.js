@@ -1,6 +1,7 @@
 // Lecturas y transacciones del contrato Licitaciones.
 
 import * as ethers from "ethers";
+import { consultarEventos } from "../shared/eventos.js";
 import { ESTADOS_LICITACION, ROLES, WEI_POR_PESO } from "../shared/protocolo.js";
 import { enviarOfertaPorRelayer, leerJsonIpfs, subirArchivo, subirJson } from "./backend.js";
 import { probarPertenencia } from "./grupo.js";
@@ -143,16 +144,16 @@ export async function leerDetalle(id) {
 
   const f = c.filters;
   const [recibidas, apertura, adjudicacion, desierta, inspectores, evaluaciones, publicacion, fondos, pagos, autorias] = await Promise.all([
-    c.queryFilter(f.OfertaRecibida(id), desde),
-    c.queryFilter(f.SobresAbiertos(id), desde),
-    c.queryFilter(f.LicitacionAdjudicada(id), desde),
-    c.queryFilter(f.LicitacionDesierta(id), desde),
-    c.queryFilter(f.InspectorAsignado(id), desde),
-    c.queryFilter(f.EvaluacionRegistrada(id), desde),
-    c.queryFilter(f.LicitacionPublicada(id), desde),
-    c.queryFilter(f.FondosDepositados(id), desde),
-    c.queryFilter(f.PagoRealizado(id), desde),
-    c.queryFilter(f.AutoriaRevelada(id), desde),
+    consultarEventos(c, f.OfertaRecibida(id), desde),
+    consultarEventos(c, f.SobresAbiertos(id), desde),
+    consultarEventos(c, f.LicitacionAdjudicada(id), desde),
+    consultarEventos(c, f.LicitacionDesierta(id), desde),
+    consultarEventos(c, f.InspectorAsignado(id), desde),
+    consultarEventos(c, f.EvaluacionRegistrada(id), desde),
+    consultarEventos(c, f.LicitacionPublicada(id), desde),
+    consultarEventos(c, f.FondosDepositados(id), desde),
+    consultarEventos(c, f.PagoRealizado(id), desde),
+    consultarEventos(c, f.AutoriaRevelada(id), desde),
   ]);
 
   const nombres = new Map();

@@ -2,6 +2,7 @@
 // Hace falta para generar las pruebas de pertenencia y para sacar a un proveedor del grupo.
 
 import { Group, generateProof } from "@semaphore-protocol/core";
+import { consultarEventos } from "../shared/eventos.js";
 import { contratosDeLectura } from "./sesion.js";
 
 /** Reconstruye el grupo tal como está ahora en la cadena. */
@@ -10,10 +11,10 @@ export async function grupoDeProveedores() {
   const grupoId = await credenciales.grupoProveedores();
   const f = semaphore.filters;
   const listas = await Promise.all([
-    semaphore.queryFilter(f.MemberAdded(grupoId), desde),
-    semaphore.queryFilter(f.MembersAdded(grupoId), desde),
-    semaphore.queryFilter(f.MemberUpdated(grupoId), desde),
-    semaphore.queryFilter(f.MemberRemoved(grupoId), desde),
+    consultarEventos(semaphore, f.MemberAdded(grupoId), desde),
+    consultarEventos(semaphore, f.MembersAdded(grupoId), desde),
+    consultarEventos(semaphore, f.MemberUpdated(grupoId), desde),
+    consultarEventos(semaphore, f.MemberRemoved(grupoId), desde),
   ]);
   const eventos = listas.flat().sort((a, b) => a.blockNumber - b.blockNumber || a.index - b.index);
 
