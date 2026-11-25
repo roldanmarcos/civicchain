@@ -231,3 +231,26 @@ npx hardhat run scripts/deploy.ts --network sepolia
 
 El despliegue usa ~16,7M de gas. Después hay que mandarle ETH de prueba al relayer. Ojo: mandar ETH a una cuenta
 nueva cuesta más de 21.000 de gas en Sepolia, así que no hay que fijar el gas a mano.
+
+### Publicar la demo en Render
+
+El archivo `render.yaml` crea dos servicios gratuitos desde el repo: `civicchain-web` (sitio estático) y
+`civicchain-api` (backend Node). Los contratos ya desplegados en Sepolia se reutilizan; no hay que volver
+a desplegarlos.
+
+1. Crear una cuenta en [Render](https://render.com/) y conectar GitHub con acceso al repo `roldanmarcos/civicchain`.
+2. En el panel, crear un **Blueprint** desde la rama `main`. Render lee la configuración de `render.yaml`.
+3. Al crear los servicios, cargar `VERIFICADOR_PRIVATE_KEY` y `RELAYER_PRIVATE_KEY` como variables secretas
+   del servicio `civicchain-api`. No ponerlas en el repo ni enviarlas por chat.
+4. Esperar que ambos servicios estén `Live`. Abrir la URL del backend con `/api/salud`: debe responder con
+   `cadena: true` y `chainId: "11155111"`. Después abrir la URL pública de `civicchain-web`.
+
+Las claves del backend deben corresponder a las direcciones que ya tienen los roles en Sepolia: verificador
+`0x1dcD1a54610cC4B523f6b136027e43F24d37DC30` y relayer
+`0x347fb54a16dc15efAAcFe12d9Eb7973944466C3c`. El relayer además necesita ETH de prueba. Si no se encuentran
+las claves privadas originales, no usar otras al azar: primero hay que crear wallets nuevas, otorgar
+`VERIFICADOR_ROLE` a la nueva dirección con una wallet admin y financiar el relayer nuevo.
+
+Esta configuración conserva SQLite e IPFS local en el backend. El servicio gratuito de Render se duerme
+después de 15 minutos sin tráfico y el disco local se pierde al dormir o reiniciarse; por eso, las cargas
+realizadas desde la dApp no tienen persistencia garantizada. Supabase todavía no está integrado.
