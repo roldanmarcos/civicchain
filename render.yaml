@@ -1,0 +1,42 @@
+services:
+  - type: web
+    name: civicchain-api
+    runtime: node
+    plan: free
+    buildCommand: npm ci --prefix backend
+    startCommand: npm --prefix backend start
+    healthCheckPath: /api/salud
+    envVars:
+      - key: NODE_VERSION
+        value: 22.13.0
+      - key: RPC_URL
+        value: https://ethereum-sepolia-rpc.publicnode.com
+      - key: VERIFICADOR_PRIVATE_KEY
+        sync: false
+      - key: RELAYER_PRIVATE_KEY
+        sync: false
+      - key: ORIGEN_DAPP
+        fromService:
+          type: web
+          name: civicchain-web
+          envVarKey: RENDER_EXTERNAL_URL
+
+  - type: web
+    name: civicchain-web
+    runtime: static
+    plan: free
+    rootDir: frontend
+    buildCommand: npm ci && npm run build
+    staticPublishPath: dist
+    envVars:
+      - key: NODE_VERSION
+        value: 22.13.0
+      - key: VITE_CHAIN_ID
+        value: "11155111"
+      - key: VITE_SEPOLIA_RPC_URL
+        value: https://ethereum-sepolia-rpc.publicnode.com
+      - key: VITE_BACKEND_URL
+        fromService:
+          type: web
+          name: civicchain-api
+          envVarKey: RENDER_EXTERNAL_URL
